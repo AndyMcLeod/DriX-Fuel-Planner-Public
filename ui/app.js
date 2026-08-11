@@ -381,6 +381,15 @@ function render(p) {
          p.total_loiter_hours > 0 ? 'warn' : ''),
     tile('Distance', fmt(p.total_distance_nm, 0), 'NM'),
     tile('Overall', fmt(p.total_distance_nm / p.total_litres, 2), 'NM/L'),
+    // Read from the PLAN, not from the form: these are the conditions the
+    // numbers above were computed under, which is not the same thing as
+    // whatever the inputs say after someone has edited them without replanning.
+    // "sets" is stated on the tile because current takes the opposite
+    // convention to wind and an unlabelled bearing here would be a trap.
+    tile('Current', `${fmt(p.current_speed_kt, 1)} kt`,
+         p.current_speed_kt > 0
+           ? `sets ${fmt(p.current_set_deg, 0)}°T`
+           : 'slack'),
   ].join('');
 
   const warn = $('warnings');

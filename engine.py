@@ -549,6 +549,11 @@ class PlanResult:
     # of a mission was spent holding rather than making way.
     total_loiter_hours: float = 0.0
     total_loiter_litres: float = 0.0
+    # -- The current this plan was RUN UNDER, carried so a surface reports the
+    # conditions the numbers came from rather than whatever a form happens to
+    # say now. Set is the direction the water flows TOWARD.
+    current_speed_kt: float = 0.0
+    current_set_deg: float = 0.0
     gauge_l_per_point: float | None = None
     gauge_l_per_point_sigma: float | None = None
     indicated_start_pct: float = 100.0
@@ -1130,6 +1135,8 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
         legs=results, total_hours=total_h, total_distance_nm=total_d,
         total_loiter_hours=sum(r.loiter_hours for r in results),
         total_loiter_litres=sum(r.loiter_litres for r in results),
+        current_speed_kt=env.current_speed_kt,
+        current_set_deg=env.current_set_deg,
         total_litres=total_l, capacity_l=vessel.capacity_l, start_litres=start_l,
         reserve_litres=reserve_l, usable_litres=usable_l,
         remaining_litres=remaining_l,

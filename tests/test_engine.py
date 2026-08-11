@@ -941,6 +941,16 @@ class TestCurrent(unittest.TestCase):
         note = ' '.join(p.legs[0].notes)
         self.assertIn('being carried', note)
 
+    def test_the_plan_carries_the_current_it_was_run_under(self):
+        """The summary tile reads these. They must come from the plan, so a
+        form edited after planning cannot make the tile describe conditions the
+        numbers were never computed under."""
+        p = plan(self.legs, self._env(1.7, 235.0), self._v(), self.m)
+        self.assertAlmostEqual(p.current_speed_kt, 1.7, places=12)
+        self.assertAlmostEqual(p.current_set_deg, 235.0, places=12)
+        slack = plan(self.legs, self._env(), self._v(), self.m)
+        self.assertEqual(slack.current_speed_kt, 0.0)
+
     def test_a_negative_current_is_refused(self):
         with self.assertRaises(ValueError) as cm:
             plan(self.legs, self._env(-1.0, 0.0), self._v(), self.m)

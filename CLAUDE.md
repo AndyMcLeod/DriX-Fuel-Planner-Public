@@ -274,6 +274,17 @@ The compass rose draws the current as a **dashed amber arrow pointing where the
 water goes**, beside the solid wind arrow pointing where the wind goes. Distinct
 colour and dash precisely because the two conventions are opposite.
 
+**A `Current` summary tile** reads `PlanResult.current_speed_kt` /
+`current_set_deg` — the first environment fields the result has ever carried,
+added so a surface reports **the conditions the numbers were computed under**
+rather than whatever the form says now. Edit the inputs without replanning and
+the tile keeps showing the planned current; a test pins that the plan carries
+it, and it was checked live. The tile spells out "sets 285°T" rather than a bare
+bearing, because current takes the opposite convention to wind and an unlabelled
+bearing there would be exactly the trap the field naming exists to avoid. Shown
+at zero as "0.0 kt / slack", same reasoning as the Loiter tile, and left
+unstyled — a current is a condition, not a warning.
+
 ## Loiter: delays imposed on a leg (2026-08-11)
 
 `Leg.loiter_hours` — time held on station making no way, charged at the
