@@ -15,7 +15,7 @@ want the planner.
 
 ```powershell
 # 1. Get the project onto the new machine (either route, see below)
-git clone https://github.com/AndyMcLeod/DriX-Fuel-Planner.git C:\Tools\Fuel
+git clone https://github.com/AndyMcLeod/DriX-Fuel-Planner-Public.git C:\Tools\Fuel
 
 # 2. Make the desktop shortcut
 powershell -ExecutionPolicy Bypass -File C:\Tools\Fuel\tools\make_shortcut.ps1
@@ -58,12 +58,11 @@ A browser. Any current one; the UI has no framework, no CDN and no build step.
 ### Route A — clone from GitHub (preferred)
 
 ```powershell
-git clone https://github.com/AndyMcLeod/DriX-Fuel-Planner.git C:\Tools\Fuel
+git clone https://github.com/AndyMcLeod/DriX-Fuel-Planner-Public.git C:\Tools\Fuel
 ```
 
-Private repo, so the machine needs credentials — `gh auth login`, or a stored
-git credential. This is the route that keeps history and lets the new machine
-pull later fixes.
+Public repo, so no credentials are needed. This is the route that keeps the
+history and lets the new machine pull later fixes.
 
 ### Route B — copy the folder
 
