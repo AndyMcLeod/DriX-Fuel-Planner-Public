@@ -226,6 +226,26 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## Form layout is not mission order (2026-08-11)
+
+The survey block sits **below both transits** in the form (Andy's call). The
+mission it plans is unchanged: **out → survey → home**.
+
+Those two orders are now deliberately different, and `tests/test_ui.py` pins
+both plus the fact that they differ. `buildBody()` assembles legs from element
+**ids**, never from document order, so moving a block cannot reorder a plan —
+but nothing said so before, and either file could have been "tidied" into
+agreement by someone assuming they were meant to match. The dangerous direction
+is the request following the form: that would survey after coming home. Both
+mutations are killed by the tests.
+
+They are static-source assertions, not a browser test — they check what the
+files say, not what a browser renders. That is the right trade here because the
+failure being guarded against is a source edit, and it keeps the suite
+dependency-free. The rendered result was checked once by hand: form reads out /
+home / survey top to bottom, request and result table both read out / survey /
+home.
+
 ## Mission waypoints, and their unit (2026-08-11)
 
 Renamed from "home marks", and the distances now take a unit — `km` (default) or

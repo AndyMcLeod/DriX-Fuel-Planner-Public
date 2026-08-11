@@ -122,6 +122,24 @@
       </div>
 
       <div class="leg">
+        <h3>Transit home</h3>
+        <div class="grid3">
+          <label class="field"><span>Range <em>NM</em></span>
+            <input type="number" id="homeRange" min="0" step="0.1" value="25"></label>
+          <label class="field"><span>Speed <em>kt</em></span>
+            <input type="number" id="homeSpeed" min="0.1" step="0.1" value="7"></label>
+          <label class="field"><span>Course <em>&deg;</em></span>
+            <input type="number" id="homeCourse" min="0" max="360" step="1" value="270"></label>
+        </div>
+      </div>
+
+      <!-- Survey sits below the two transits by choice (Andy, 2026-08-11). This
+           is PRESENTATION ONLY: buildBody() in app.js assembles the legs in
+           mission order — out, survey, home — from element ids, never from
+           document order, so moving this block cannot reorder the plan. A test
+           pins that the served markup keeps survey last while the API keeps it
+           in the middle. -->
+      <div class="leg">
         <h3>Survey</h3>
         <div class="grid3">
           <label class="field"><span>Lines</span>
@@ -134,18 +152,6 @@
             <input type="number" id="surSpeed" min="0.1" step="0.1" value="8"></label>
           <div class="field"><span>Survey distance</span>
             <output class="readout" id="surTotal">&mdash;</output></div>
-        </div>
-      </div>
-
-      <div class="leg">
-        <h3>Transit home</h3>
-        <div class="grid3">
-          <label class="field"><span>Range <em>NM</em></span>
-            <input type="number" id="homeRange" min="0" step="0.1" value="25"></label>
-          <label class="field"><span>Speed <em>kt</em></span>
-            <input type="number" id="homeSpeed" min="0.1" step="0.1" value="7"></label>
-          <label class="field"><span>Course <em>&deg;</em></span>
-            <input type="number" id="homeCourse" min="0" max="360" step="1" value="270"></label>
         </div>
       </div>
 
