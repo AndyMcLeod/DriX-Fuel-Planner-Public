@@ -422,3 +422,10 @@ guard, the negative-fuel clamp and the runs-dry flag; each is caught.
   reason to be non-linear, so the effect is unresolved rather than absent.
 - **Every gauge reading is from the top third of the tank.** The 25% reserve
   band has no direct calibration at all, so treat it as a soft floor.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE). The warranty disclaimer is not boilerplate here:
+this is a planning aid whose sea-state response is an assumption and whose
+reserve band has never been measured. Read "Limits worth stating plainly" above
+before anyone plans a real mission on it.
