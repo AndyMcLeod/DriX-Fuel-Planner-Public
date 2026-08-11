@@ -127,6 +127,29 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .leg:first-of-type { border-top: 0; padding-top: 0; }
 .leg h3 { margin: 0 0 .5rem; font-size: .9rem; }
 
+/* Loiter: a delay imposed on a leg. Sits on one row under the leg's inputs so
+   it reads as a modifier of that leg, not a fourth thing to fill in. */
+.loiter {
+  display: flex; align-items: center; gap: .4rem;
+  margin-top: .6rem; flex-wrap: wrap;
+}
+.loiter-label {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--ink-soft); font-weight: 700;
+}
+.loiter input { width: 4.5rem; }
+.loiter select { width: auto; }
+.loiter input, .loiter select { padding: .3rem .4rem; font-size: .82rem; }
+button.ghost {
+  background: transparent; border: 1px dashed var(--line);
+  color: var(--ink-soft); padding: .28rem .5rem; font-size: .76rem;
+  font-weight: 600;
+}
+button.ghost:hover { color: var(--ink); border-style: solid; }
+/* A leg that is holding gets a visible marker — a delay typed in and then
+   forgotten is exactly the thing that should not be quiet. */
+.leg.holding { border-left: 3px solid var(--warn); padding-left: .6rem; }
+
 .note { margin: .55rem 0 0; font-size: .78rem; color: var(--ink-soft); }
 
 .actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }

@@ -9,6 +9,7 @@ mutation guard (test_mutation_sensitivity) that fails if the coefficients are
 perturbed — so a silently broken model.json cannot pass.
 """
 
+import dataclasses
 import datetime as dt
 import math
 import sys
@@ -835,6 +836,148 @@ class TestGaugeDenominatedReserve(unittest.TestCase):
         self.assertIsNone(p.gauge_within_reserve)
         self.assertGreater(p.total_litres, 0.0)
         self.assertFalse(any('GAUGE DISAGREES' in w for w in p.warnings))
+
+
+class TestLoiter(unittest.TestCase):
+    """Delays imposed on a leg, charged at the gondola's idle burn.
+
+    Things happen at sea; the model accommodates them rather than pretending
+    the plan ran clean. Loiter is held at the END of its leg.
+    """
+
+    def setUp(self):
+        self.m = Model()
+        self.env = Environment(wmo_sea_state=2, wind_speed_kt=0.0)
+        self.legs = [Leg('out', 'transit', 20.0, 8.0, 0.0),
+                     Leg('survey', 'survey', 120.0, 8.0, 90.0),
+                     Leg('home', 'transit', 20.0, 8.0, 180.0)]
+
+    def _v(self):
+        return Vessel(gondola='em2040')
+
+    def _with_loiter(self, idx, hours):
+        legs = []
+        for i, l in enumerate(self.legs):
+            d = {f.name: getattr(l, f.name) for f in dataclasses.fields(l)}
+            if i == idx:
+                d['loiter_hours'] = hours
+            legs.append(Leg(**d))
+        return legs
+
+    def test_no_loiter_changes_nothing(self):
+        """The safety property behind the whole feature: an absent delay must
+        reproduce the old plan exactly, not approximately."""
+        a = plan(self.legs, self.env, self._v(), self.m)
+        b = plan(self._with_loiter(0, 0.0), self.env, self._v(), self.m)
+        self.assertAlmostEqual(a.total_litres, b.total_litres, places=12)
+        self.assertAlmostEqual(a.total_hours, b.total_hours, places=12)
+        self.assertEqual(a.verdict, b.verdict)
+
+    def test_loiter_burns_the_measured_idle_rate(self):
+        """Against arithmetic done outside the engine, from model.json."""
+        lph = self.m.data['gondolas']['options']['em2040']['loiter']['lph']
+        self.assertEqual(lph, 0.95)
+        base = plan(self.legs, self.env, self._v(), self.m)
+        held = plan(self._with_loiter(1, 3.0), self.env, self._v(), self.m)
+        self.assertAlmostEqual(held.total_litres - base.total_litres,
+                               3.0 * lph, places=9)
+        self.assertAlmostEqual(held.total_hours - base.total_hours, 3.0, places=12)
+
+    def test_the_leg_keeps_its_underway_figures_separate(self):
+        """`litres == fuel_rate_lph * hours` has to keep holding, or every
+        reader of the leg table is quietly reading a blended rate."""
+        p = plan(self._with_loiter(1, 2.0), self.env, self._v(), self.m)
+        leg = p.legs[1]
+        self.assertAlmostEqual(leg.litres, leg.fuel_rate_lph * leg.hours, places=9)
+        self.assertAlmostEqual(leg.loiter_litres, 2.0 * leg.loiter_lph, places=12)
+        self.assertAlmostEqual(leg.total_litres, leg.litres + leg.loiter_litres,
+                               places=12)
+        # The timeline carries the hold; the underway hours do not.
+        self.assertAlmostEqual(leg.end_hours - leg.start_hours,
+                               leg.hours + 2.0, places=12)
+
+    def test_loiter_burns_no_distance_and_does_not_move_nm_per_l(self):
+        base = plan(self.legs, self.env, self._v(), self.m)
+        held = plan(self._with_loiter(1, 5.0), self.env, self._v(), self.m)
+        self.assertAlmostEqual(held.total_distance_nm, base.total_distance_nm,
+                               places=12)
+        self.assertAlmostEqual(held.legs[1].nm_per_l, base.legs[1].nm_per_l,
+                               places=12)
+
+    def test_a_hold_shifts_everything_after_it_and_nothing_before(self):
+        """Loiter sits at the END of its leg, so the first leg's own outbound
+        waypoint is untouched while the inbound one moves out by the delay."""
+        base = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,))
+        held = plan(self._with_loiter(0, 4.0), self.env, self._v(), self.m,
+                    waypoints=(13.0,))
+        b_out = next(m for m in base.marks if m['phase'] == 'outbound')
+        h_out = next(m for m in held.marks if m['phase'] == 'outbound')
+        self.assertAlmostEqual(b_out['elapsed_hours'], h_out['elapsed_hours'],
+                               places=12)
+        b_in = next(m for m in base.marks if m['phase'] == 'inbound')
+        h_in = next(m for m in held.marks if m['phase'] == 'inbound')
+        self.assertAlmostEqual(h_in['elapsed_hours'] - b_in['elapsed_hours'],
+                               4.0, places=12)
+
+    def test_the_fuel_at_a_later_mark_includes_the_hold(self):
+        """An ordering assertion would pass with the hold's fuel dropped."""
+        lph = self.m.data['gondolas']['options']['em2040']['loiter']['lph']
+        base = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,))
+        held = plan(self._with_loiter(0, 4.0), self.env, self._v(), self.m,
+                    waypoints=(13.0,))
+        b_in = next(m for m in base.marks if m['phase'] == 'inbound')
+        h_in = next(m for m in held.marks if m['phase'] == 'inbound')
+        self.assertAlmostEqual(h_in['litres_burned'] - b_in['litres_burned'],
+                               4.0 * lph, places=9)
+
+    def test_a_long_enough_hold_breaches_the_reserve(self):
+        """The point of the feature: a delay must be able to change the answer,
+        not just the arithmetic."""
+        ok = plan(self.legs, self.env, self._v(), self.m)
+        self.assertEqual(ok.verdict, 'ok')
+        held = plan(self._with_loiter(1, 400.0), self.env, self._v(), self.m)
+        self.assertNotEqual(held.verdict, 'ok')
+        self.assertLess(held.binding_margin_litres, 0.0)
+
+    def test_the_sensitivity_rows_carry_the_hold(self):
+        """Otherwise shifting the premium appears to change the whole burn
+        while the hold sits outside every row."""
+        lph = self.m.data['gondolas']['options']['em2040']['loiter']['lph']
+        base = plan(self.legs, self.env, self._v(), self.m)
+        held = plan(self._with_loiter(1, 6.0), self.env, self._v(), self.m)
+        for b, h in zip(base.sensitivity, held.sensitivity):
+            self.assertAlmostEqual(h['total_litres'] - b['total_litres'],
+                                   6.0 * lph, places=9)
+
+    def test_a_gondola_without_a_measured_idle_burn_says_so(self):
+        """EM712 has no loiter block. The rate must come from ITS OWN fuel law,
+        never borrowed from the gondola that was measured, and be flagged."""
+        lph_2040, measured_2040, _ = self.m.loiter_rate_lph('em2040')
+        lph_712, measured_712, rpm = self.m.loiter_rate_lph('em712')
+        self.assertTrue(measured_2040)
+        self.assertFalse(measured_712)
+        self.assertNotAlmostEqual(lph_712, lph_2040, places=6)
+        self.assertAlmostEqual(lph_712, self.m.fuel_rate_lph(rpm, 'em712'),
+                               places=12)
+        p = plan(self._with_loiter(1, 2.0), self.env,
+                 Vessel(gondola='em712'), self.m)
+        self.assertFalse(p.legs[1].loiter_measured)
+        self.assertTrue(any('EXTRAPOLATION' in n for n in p.legs[1].notes),
+                        p.legs[1].notes)
+
+    def test_the_hold_note_names_the_sea_state_gap(self):
+        """The idle figure is calm-water. Saying so is the honest part."""
+        p = plan(self._with_loiter(1, 2.0), self.env, self._v(), self.m)
+        note = ' '.join(p.legs[1].notes)
+        self.assertIn('NO sea-state premium', note)
+
+    def test_a_negative_hold_is_refused(self):
+        with self.assertRaises(ValueError) as cm:
+            plan(self._with_loiter(0, -1.0), self.env, self._v(), self.m)
+        self.assertIn('loiter must not be negative', str(cm.exception))
+        # ...and the acceptance case, so the refusal is not vacuous.
+        p = plan(self._with_loiter(0, 0.25), self.env, self._v(), self.m)
+        self.assertAlmostEqual(p.legs[0].loiter_hours, 0.25, places=12)
 
 
 class TestMissionClock(unittest.TestCase):

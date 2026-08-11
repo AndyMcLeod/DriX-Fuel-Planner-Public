@@ -130,13 +130,18 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         # reciprocal pair.
         lines = l.get('lines')
         length = l.get('line_length_nm')
+        # Loiter arrives in HOURS. Minutes are a display unit and the UI
+        # converts; keeping one unit on the wire means the engine never has to
+        # guess which it was handed.
+        loiter = l.get('loiter_hours')
         return Leg(name=str(l.get('name', f'Leg {i + 1}')),
                    kind=str(l.get('kind', 'transit')),
                    distance_nm=float(l.get('distance_nm', 0.0)),
                    speed_kt=float(l.get('speed_kt', 6.0)),
                    course_deg=float(l.get('course_deg', 0.0)),
                    lines=int(lines) if lines not in (None, '') else None,
-                   line_length_nm=float(length) if length not in (None, '') else None)
+                   line_length_nm=float(length) if length not in (None, '') else None,
+                   loiter_hours=float(loiter) if loiter not in (None, '') else 0.0)
 
     legs = [_leg(i, l) for i, l in enumerate(legs_in)]
 

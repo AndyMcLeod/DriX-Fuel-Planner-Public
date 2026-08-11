@@ -139,6 +139,33 @@ they are for.
   the default vessel under reading A; 347 NM under B). A solver whose answer the
   planner then flags red would be a bug, and a test asserts it never happens.
 
+## Loiter — delays you can plan around
+
+Things happen at sea. Every leg takes a **`loiter_hours`**: time held on station
+making no way, entered in the UI in minutes or hours with `+15m` / `+1h` /
+`clear` buttons, and folded into the plan when you press **Plan mission** again.
+
+It is charged at the gondola's **measured idle burn** — 0.95 L/h for the EM2040,
+from 20.8 h of observed idle at ~1005 rpm — so a two-hour hold costs 1.9 L and
+two hours of clock.
+
+Three things worth knowing:
+
+- **The hold is taken at the end of its leg.** A delay on the outbound transit
+  therefore leaves that leg's own outbound waypoint where it was and shifts
+  everything after it. That placement is a convention, not a measurement.
+- **Underway figures stay underway.** A leg's `hours`, `litres`,
+  `fuel_rate_lph` and `nm_per_l` describe making way, so `litres = rate × hours`
+  still holds; `total_litres` and `end_hours − start_hours` are what the leg
+  actually costs and takes.
+- **The idle figure is calm water.** Station-keeping in a seaway has never been
+  measured, so a hold carries **no sea-state premium**. The leg note says so
+  rather than letting you assume it was included.
+
+A gondola with no measured idle burn — the EM712 — does not borrow the EM2040's.
+Its rate comes from its own fuel law at idle rpm and is flagged as an
+extrapolation, because that rpm is below the window the law was fitted over.
+
 ## How a leg is computed
 
 ```
@@ -338,6 +365,7 @@ firmware that adds topics fails the run rather than shipping blank rows.
 |---|---|---|
 | `GET /api/model` | — | `model.json` |
 | `POST /api/plan` | `{environment, vessel, legs, start_time?, waypoints?, waypoint_unit?}` | full plan |
+| | a leg also takes `loiter_hours` | |
 | `POST /api/max-survey` | same | longest survey holding the reserve |
 
 ```bash

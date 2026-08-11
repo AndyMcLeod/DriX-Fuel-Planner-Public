@@ -66,12 +66,14 @@ async function boot() {
     $(id).addEventListener('input', drawRose));
 
   $('waypointUnit').addEventListener('change', onWaypointUnitChange);
+  wireLoiter();
 
   $('planForm').addEventListener('submit', (e) => { e.preventDefault(); doPlan(); });
   $('maxBtn').addEventListener('click', doMaxSurvey);
 
   onSeaChange();
   refreshDerived();
+  refreshHolding();
   drawRose();
 }
 
@@ -122,6 +124,65 @@ function onSeaChange() {
   refreshDerived();
 }
 
+// --------------------------------------------------------------------- loiter
+// Delays imposed on a leg: launch and recovery hold-ups, traffic, a sensor
+// problem. Entered in minutes or hours, always SENT in hours, and charged at
+// the gondola's idle burn by the engine.
+const LOITER_LEGS = ['out', 'sur', 'home'];
+
+function loiterHours(prefix) {
+  const v = Number($(prefix + 'Loiter').value) || 0;
+  if (v <= 0) return 0;
+  return $(prefix + 'LoiterUnit').value === 'h' ? v : v / 60;
+}
+
+/** Add minutes to a field, in whatever unit it is currently showing. */
+function addLoiterMinutes(id, minutes) {
+  const box = $(id);
+  const unit = $(id + 'Unit').value;
+  const current = Number(box.value) || 0;
+  const next = unit === 'h' ? current + minutes / 60 : current + minutes;
+  // Trim float noise from the hours case: 0.25 + 0.25 must read 0.5, not
+  // 0.7500000000000001 on the third press.
+  box.value = String(Number(next.toFixed(4)));
+  refreshHolding();
+}
+
+/** Mark legs that are holding, so a delay typed in and forgotten is visible. */
+function refreshHolding() {
+  LOITER_LEGS.forEach((p) => {
+    const leg = $(p + 'Loiter').closest('.leg');
+    if (leg) leg.classList.toggle('holding', loiterHours(p) > 0);
+  });
+}
+
+function wireLoiter() {
+  document.querySelectorAll('[data-loiter-add]').forEach((b) =>
+    b.addEventListener('click', () =>
+      addLoiterMinutes(b.dataset.loiterAdd, Number(b.dataset.addMin))));
+  document.querySelectorAll('[data-loiter-clear]').forEach((b) =>
+    b.addEventListener('click', () => {
+      $(b.dataset.loiterClear).value = '0';
+      refreshHolding();
+    }));
+  LOITER_LEGS.forEach((p) => {
+    $(p + 'Loiter').addEventListener('input', refreshHolding);
+    // Changing the unit CONVERTS what is typed, exactly as the waypoint unit
+    // does: 90 min is 1.5 h, and a unit switch must not silently redefine a
+    // delay as 24x longer.
+    const sel = $(p + 'LoiterUnit');
+    sel.addEventListener('change', () => {
+      const box = $(p + 'Loiter');
+      const v = Number(box.value) || 0;
+      if (v > 0) {
+        const toHours = sel.value === 'h';
+        box.value = String(Number((toHours ? v / 60 : v * 60).toFixed(4)));
+      }
+      refreshHolding();
+    });
+  });
+}
+
 const surveyDistance = () =>
   (Number($('surLines').value) || 0) * (Number($('surRange').value) || 0);
 
@@ -151,15 +212,18 @@ function buildBody() {
     },
     legs: [
       { name: 'Transit out', kind: 'transit', distance_nm: Number($('outRange').value),
-        speed_kt: Number($('outSpeed').value), course_deg: Number($('outCourse').value) },
+        speed_kt: Number($('outSpeed').value), course_deg: Number($('outCourse').value),
+        loiter_hours: loiterHours('out') },
       { name: 'Survey', kind: 'survey',
         // distance is derived server-side from lines x line length
         distance_nm: 0,
         lines: Number($('surLines').value),
         line_length_nm: Number($('surRange').value),
-        speed_kt: Number($('surSpeed').value), course_deg: Number($('surCourse').value) },
+        speed_kt: Number($('surSpeed').value), course_deg: Number($('surCourse').value),
+        loiter_hours: loiterHours('sur') },
       { name: 'Transit home', kind: 'transit', distance_nm: Number($('homeRange').value),
-        speed_kt: Number($('homeSpeed').value), course_deg: Number($('homeCourse').value) },
+        speed_kt: Number($('homeSpeed').value), course_deg: Number($('homeCourse').value),
+        loiter_hours: loiterHours('home') },
     ],
     // Blank start time is sent as null: elapsed hours only, no clock.
     start_time: $('startTime').value || null,
@@ -325,9 +389,13 @@ function render(p) {
       <td>${signedPct(l.total_premium)}${l.premium_max - l.premium_min > 1e-6
             ? ` <span class="soft">±${fmt((l.premium_max - l.premium_min) * 50, 1)}</span>`
             : ''}</td>
-      <td>${fmt(l.fuel_rate_lph, 2)}</td><td>${fmt(l.hours, 2)}</td>
+      <td>${fmt(l.fuel_rate_lph, 2)}</td>
+      <td>${fmt(l.hours, 2)}${l.loiter_hours > 0
+            ? ` <span class="soft">+${fmt(l.loiter_hours, 2)} hold</span>` : ''}</td>
       <td>${l.end_clock ? escapeHtml(l.end_clock) : 'T+' + fmt(l.end_hours, 2) + ' h'}</td>
-      <td>${fmt(l.litres, 1)}</td><td>${fmt(l.nm_per_l, 2)}</td>
+      <td>${fmt(l.litres, 1)}${l.loiter_litres > 0
+            ? ` <span class="soft">+${fmt(l.loiter_litres, 1)} hold</span>` : ''}</td>
+      <td>${fmt(l.nm_per_l, 2)}</td>
     </tr>`).join('');
   // Per-leg notes carry the reasoning behind a number — why a survey costs more
   // than its mean premium suggests, which lines left the fitted window. They

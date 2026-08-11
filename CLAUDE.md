@@ -226,6 +226,53 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## Loiter: delays imposed on a leg (2026-08-11)
+
+`Leg.loiter_hours` — time held on station making no way, charged at the
+gondola's **idle burn**. Andy's framing: things happen at sea that are
+uncontrolled but can be accommodated in the model, then you replan. Each leg
+card carries a loiter row (value + min/hours + `+15m` / `+1h` / `clear`), and
+pressing **Plan mission** is the replan.
+
+**It costs the measured idle rate, which was already in `model.json` and had
+never been used.** `gondolas.options.em2040.loiter.lph = 0.95` — 20.8 h of
+observed idle at ~1005 rpm. A 2 h hold is 1.90 L, verified live.
+
+**Held at the END of its leg.** That is the one part of this that is a
+convention rather than a measurement, and it is chosen because it leaves the
+leg's own distance waypoints where they were: a hold on the outbound transit
+does not move the outbound 13 km mark, but shifts everything after it by the
+delay. Two tests pin exactly that, and a mutation moving the hold to the start
+is killed.
+
+**Underway and held figures stay separate on `LegResult`.** `hours`, `litres`,
+`fuel_rate_lph` and `nm_per_l` remain **underway** quantities, so
+`litres == fuel_rate_lph * hours` still holds and `nm_per_l` still describes
+what the gondola does on a litre. The leg's real cost is `total_litres` and its
+real duration is `end_hours - start_hours`. Blending them would have quietly
+turned the leg table into a mixture of a rate and a hold.
+
+**A gondola with no measured idle burn does not borrow one.** The EM712 has no
+`loiter` block, so its rate is read off **its own** fuel law at idle rpm and
+flagged as an EXTRAPOLATION — that rpm is below the window the law was fitted
+over. Borrowing the EM2040's 0.95 would mix two drag states, which is the whole
+reason the planner carries two gondolas. A mutation that borrows it is killed.
+
+**The idle figure is calm-water and the note says so.** Station-keeping in a
+seaway has never been measured, so the hold carries **no sea-state premium** —
+stated in the leg note rather than silently assumed away. Dropping that sentence
+is a killed mutation.
+
+`_total_litres` sums `total_litres`, so the sensitivity rows carry the hold;
+otherwise shifting the premium would appear to change a mission's whole burn
+while a two-hour hold sat outside every row.
+
+Verified live: 0 / 60 / 115 / 140 h holds run WITHIN RESERVE → BREACHES, spare
+falling 112.2 → 55.2 → 2.9 → −19.0 L. The flip at ~118 h agrees with the
+~190 h station-keeping endurance once the underway burn is taken off. Unit
+switching converts (90 min ↔ 1.5 h) and round-trips exactly, same rule as the
+waypoint unit.
+
 ## The UI is an operating instrument now, not a briefing (2026-08-11)
 
 Andy stripped the explanatory apparatus out of the private UI as well, not just

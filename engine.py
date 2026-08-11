@@ -63,6 +63,11 @@ WAYPOINTS_KM = (13.0, 26.0)
 NM_PER_WAYPOINT_UNIT = {'km': 1.0 / KM_PER_NM, 'nm': 1.0}
 DEFAULT_WAYPOINT_UNIT = 'km'
 
+# Engine idle, in rpm. A DRIVETRAIN fact rather than a gondola one — direct
+# drive, the engine idles at ~1000 rpm whatever gondola is fitted — so it stands
+# in when a gondola carries no measured loiter block of its own.
+IDLE_RPM = 1005.0
+
 # Deprecated alias. The feature is "mission waypoints" now; this name is kept
 # because it is the one the published API documented.
 HOME_MARKS_KM = WAYPOINTS_KM
@@ -191,6 +196,13 @@ class Leg:
     course_deg: float = 0.0
     lines: int | None = None
     line_length_nm: float | None = None
+    # Time held on station on this leg, making no way — a launch or recovery
+    # delay, a hold for traffic, a sensor problem. Charged at the gondola's
+    # IDLE burn, and taken at the END of the leg: the distance is run, then the
+    # vehicle waits. That placement is what keeps the leg's own distance marks
+    # where they were, and it is the only part of this that is a convention
+    # rather than a measurement.
+    loiter_hours: float = 0.0
 
     def resolved_distance_nm(self) -> float:
         """Ground covered. Derived from the lines when they are given."""
@@ -216,6 +228,8 @@ class Leg:
             errs.append(f'{self.name}: distance must not be negative')
         if self.speed_kt <= 0:
             errs.append(f'{self.name}: speed must be greater than zero')
+        if self.loiter_hours < 0:
+            errs.append(f'{self.name}: loiter must not be negative')
         if self.kind not in ('transit', 'survey'):
             errs.append(f'{self.name}: kind must be "transit" or "survey"')
         if self.lines is not None:
@@ -382,6 +396,29 @@ class Model:
             return max(0.0, q0 + q1 * rpm + q2 * rpm * rpm)
         return max(0.0, self.f0 + self.f1 * rpm)
 
+    def loiter_rate_lph(self, gondola: str = 'em712') -> tuple[float, bool, float]:
+        """Idle burn while holding station: (litres/hour, measured?, rpm).
+
+        The EM2040's figure is MEASURED — 0.95 L/h at ~1005 rpm over 20.8 h of
+        observed idle. Where a gondola has no such block the rate is read off
+        that gondola's OWN fuel law at idle rpm rather than borrowed from a
+        gondola that was measured: a different gondola is a different drag
+        state, and the whole point of carrying two is not to mix them. The
+        caller is told which it got, because the derived one is an
+        extrapolation below the fuel law's fitted floor.
+
+        Idle rpm is a DRIVETRAIN fact, not a gondola one — the engine idles at
+        about the same speed whatever is slung underneath — so it carries over
+        when a gondola supplies no figure of its own.
+        """
+        g = self.data.get('gondolas', {}).get('options', {}).get(gondola, {})
+        block = g.get('loiter') or {}
+        rpm = float(block.get('rpm') or IDLE_RPM)
+        lph = block.get('lph')
+        if lph is not None:
+            return float(lph), True, rpm
+        return max(0.0, self.fuel_rate_lph(rpm, gondola)), False, rpm
+
     def in_fit_window(self, rpm: float, gondola: str = 'em712') -> bool:
         g = self._law(gondola)
         return g['rpm_min'] <= rpm <= g['rpm_max']
@@ -444,8 +481,19 @@ class LegResult:
     rpm_max: float = 0.0
     premium_min: float = 0.0
     premium_max: float = 0.0
+    # -- Loiter: time held on station at the END of this leg, making no way.
+    # `hours`, `litres`, `fuel_rate_lph` and `nm_per_l` above all remain
+    # UNDERWAY quantities, so `litres == fuel_rate_lph * hours` still holds and
+    # nm_per_l still describes how far this gondola goes on a litre. The leg's
+    # real cost and duration are total_litres and (end_hours - start_hours).
+    loiter_hours: float = 0.0
+    loiter_litres: float = 0.0
+    loiter_lph: float = 0.0
+    loiter_measured: bool = True
+    total_litres: float = 0.0
     # Position on the mission timeline. Elapsed hours are always present;
-    # the clock strings only when a start time was supplied.
+    # the clock strings only when a start time was supplied. end_hours includes
+    # the loiter, because the clock is what the mission actually takes.
     start_hours: float = 0.0
     end_hours: float = 0.0
     start_clock: str | None = None
@@ -598,6 +646,25 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     if rate <= 0:
         notes.append('Fuel model clamped at zero; the leg is below its valid range.')
 
+    # -- Loiter, held at the end of the leg ---------------------------------- #
+    loiter_h = max(0.0, float(leg.loiter_hours or 0.0))
+    loiter_lph, loiter_measured, loiter_rpm = model.loiter_rate_lph(gondola)
+    loiter_l = loiter_lph * loiter_h
+    if loiter_h > 0:
+        if loiter_measured:
+            notes.append(
+                f'Holding {_hm(loiter_h)} at the end of this leg: '
+                f'{loiter_l:.1f} L at the measured idle burn of {loiter_lph:.2f} L/h. '
+                f'That figure is calm-water and carries NO sea-state premium — '
+                f'station-keeping in a seaway has never been measured.')
+        else:
+            notes.append(
+                f'Holding {_hm(loiter_h)} at the end of this leg: '
+                f'{loiter_l:.1f} L at {loiter_lph:.2f} L/h, which is this '
+                f'gondola\'s fuel law read at {loiter_rpm:.0f} rpm — it has no '
+                f'measured idle burn, and that rpm is below the window the law '
+                f'was fitted over, so the figure is an EXTRAPOLATION.')
+
     return LegResult(
         name=leg.name, kind=leg.kind, distance_nm=distance,
         speed_kt=leg.speed_kt, course_deg=leg.course_deg, hours=hours,
@@ -605,11 +672,22 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
         heading_premium=head_p, total_premium=total_p, fuel_rate_lph=rate,
         litres=litres, nm_per_l=(distance / litres) if litres > 0 else 0.0,
         extrapolated=extrapolated, notes=notes,
+        loiter_hours=loiter_h, loiter_litres=loiter_l, loiter_lph=loiter_lph,
+        loiter_measured=loiter_measured, total_litres=litres + loiter_l,
         lines=leg.lines, line_length_nm=leg.line_length_nm,
         rpm_min=min(rpms) if rpms else rpm_req,
         rpm_max=max(rpms) if rpms else rpm_req,
         premium_min=min(prems) if prems else total_p,
         premium_max=max(prems) if prems else total_p)
+
+
+def _hm(hours: float) -> str:
+    """A duration as an operator would say it: '20 min', '1 h', '2 h 30 min'."""
+    total_min = int(round(hours * 60.0))
+    h, m = divmod(total_min, 60)
+    if h and m:
+        return f'{h} h {m} min'
+    return f'{h} h' if h else f'{m} min'
 
 
 def _clock(start: dt.datetime | None, hours: float) -> tuple[str | None, str | None]:
@@ -732,7 +810,11 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
 def _total_litres(legs: list[Leg], env: Environment, model: Model,
                   sea_override: dict[int, float] | None, premium_delta: float,
                   gondola: str = 'em712') -> float:
-    return sum(plan_leg(l, env, model, sea_override, premium_delta, gondola).litres
+    # total_litres, not litres: the sensitivity rows have to carry the loiter
+    # too, or shifting the premium would appear to change a mission's whole
+    # burn while a two-hour hold quietly sat outside every row.
+    return sum(plan_leg(l, env, model, sea_override, premium_delta,
+                        gondola).total_litres
                for l in legs)
 
 
@@ -808,17 +890,21 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
     # Lay the legs out on a mission timeline. Elapsed hours always; clock times
     # only when a start was given. cum_l[i] is the fuel burned BEFORE leg i,
     # which is what the range marks interpolate from.
+    # Loiter is held at the END of a leg, so it lands in end_hours and in the
+    # running burn, but NOT between a leg's start and its own distance marks —
+    # which is exactly why the marks below need no notion of it.
     cum_l: list[float] = []
     elapsed = burned = 0.0
     for r in results:
         cum_l.append(burned)
-        r.start_hours, r.end_hours = elapsed, elapsed + r.hours
+        r.start_hours = elapsed
+        r.end_hours = elapsed + r.hours + r.loiter_hours
         r.start_iso, r.start_clock = _clock(start_time, r.start_hours)
         r.end_iso, r.end_clock = _clock(start_time, r.end_hours)
-        elapsed, burned = r.end_hours, burned + r.litres
+        elapsed, burned = r.end_hours, burned + r.total_litres
 
-    total_l = sum(r.litres for r in results)
-    total_h = sum(r.hours for r in results)
+    total_l = sum(r.total_litres for r in results)
+    total_h = sum(r.hours + r.loiter_hours for r in results)
     total_d = sum(r.distance_nm for r in results)
 
     start_l = vessel.capacity_l * vessel.start_level_fraction
