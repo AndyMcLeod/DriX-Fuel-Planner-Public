@@ -263,6 +263,16 @@ seaway has never been measured, so the hold carries **no sea-state premium** —
 stated in the leg note rather than silently assumed away. Dropping that sentence
 is a killed mutation.
 
+**A `Loiter` summary tile** sits between Mission time and Distance, reading
+`PlanResult.total_loiter_hours` / `total_loiter_litres`. Those are broken out
+of, **not additional to**, `total_hours` and `total_litres` — a test asserts the
+mission totals move by exactly the hold, because a double-counting tile would
+read plausibly and be wrong. It is shown **even at zero** ("0 min / no holds"):
+that is the confirmation a plan reviewer wants, and a tile that vanished would
+leave them unsure whether they had forgotten to set one. Amber when non-zero,
+matching the marker on a holding leg, via a new `.tile.warn` rule — the tile
+CSS only had `ok` and `bad`.
+
 `_total_litres` sums `total_litres`, so the sensitivity rows carry the hold;
 otherwise shifting the premium would appear to change a mission's whole burn
 while a two-hour hold sat outside every row.

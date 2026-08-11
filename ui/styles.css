@@ -179,8 +179,11 @@ button.primary {
 .tile .v { font-size: 1.28rem; font-weight: 700; font-variant-numeric: tabular-nums;
            margin-top: .15rem; }
 .tile .u { font-size: .74rem; color: var(--ink-soft); font-weight: 500; }
-.tile.ok  .v { color: var(--ok); }
-.tile.bad .v { color: var(--bad); }
+.tile.ok   .v { color: var(--ok); }
+.tile.bad  .v { color: var(--bad); }
+/* Not a failure — a plan carrying imposed delays. Amber matches the marker on
+   a holding leg, so the tile and the leg read as the same fact. */
+.tile.warn .v { color: var(--warn); }
 
 .tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: .86rem; }

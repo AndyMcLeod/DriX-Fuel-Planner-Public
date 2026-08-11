@@ -368,6 +368,13 @@ function render(p) {
     tile('Spare range', p.verdict === 'ok' ? fmt(p.binding_margin_nm, 0) : '—', 'NM'),
     tile('Spare time', p.verdict === 'ok' ? fmt(p.binding_margin_hours) : '—', 'h'),
     tile('Mission time', fmt(p.total_hours), 'h'),
+    // Shown even at zero: "no holds" is the confirmation an operator reviewing
+    // a plan wants, and a tile that vanished would leave them wondering whether
+    // they had forgotten to set one. Marked when it is not zero, because time
+    // spent holding is time not surveying.
+    tile('Loiter', hm(p.total_loiter_hours || 0),
+         p.total_loiter_hours > 0 ? `${fmt(p.total_loiter_litres, 1)} L held` : 'no holds',
+         p.total_loiter_hours > 0 ? 'warn' : ''),
     tile('Distance', fmt(p.total_distance_nm, 0), 'NM'),
     tile('Overall', fmt(p.total_distance_nm / p.total_litres, 2), 'NM/L'),
   ].join('');
@@ -439,6 +446,16 @@ function render(p) {
   // lost: it is the "Needle on return" tile, and `verdict` still drives the
   // banner — including `gauge_breach`, where the capacity row passes and the
   // needle does not. Verification rail 6 stays satisfied.
+}
+
+/** A duration as an operator says it: '0 min', '45 min', '1 h', '2 h 30 min'.
+ *  Mirrors _hm() in engine.py so the tile and the leg notes agree. */
+function hm(hours) {
+  const totalMin = Math.round((Number(hours) || 0) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h && m) return `${h} h ${m} min`;
+  return h ? `${h} h` : `${m} min`;
 }
 
 const tile = (k, v, u, cls = '') =>

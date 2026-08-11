@@ -530,6 +530,11 @@ class PlanResult:
     # mission may spend before reaching it is fixed by the gauge scale alone
     # and no tank-capacity assumption enters it. Reported alongside the
     # capacity-based figures, never instead of them.
+    # -- Loiter, summed over the legs. `total_hours` and `total_litres` above
+    # already INCLUDE these; they are broken out so a surface can say how much
+    # of a mission was spent holding rather than making way.
+    total_loiter_hours: float = 0.0
+    total_loiter_litres: float = 0.0
     gauge_l_per_point: float | None = None
     gauge_l_per_point_sigma: float | None = None
     indicated_start_pct: float = 100.0
@@ -1045,6 +1050,8 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
 
     return PlanResult(
         legs=results, total_hours=total_h, total_distance_nm=total_d,
+        total_loiter_hours=sum(r.loiter_hours for r in results),
+        total_loiter_litres=sum(r.loiter_litres for r in results),
         total_litres=total_l, capacity_l=vessel.capacity_l, start_litres=start_l,
         reserve_litres=reserve_l, usable_litres=usable_l,
         remaining_litres=remaining_l,

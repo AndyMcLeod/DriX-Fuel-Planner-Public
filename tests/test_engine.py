@@ -971,6 +971,32 @@ class TestLoiter(unittest.TestCase):
         note = ' '.join(p.legs[1].notes)
         self.assertIn('NO sea-state premium', note)
 
+    def test_the_plan_totals_the_holds_across_legs(self):
+        """The summary tile reads these, so they must be the sum of the legs and
+        must already be inside total_hours/total_litres, not additional to them."""
+        legs = []
+        for i, l in enumerate(self.legs):
+            d = {f.name: getattr(l, f.name) for f in dataclasses.fields(l)}
+            d['loiter_hours'] = [0.5, 1.5, 0.25][i]
+            legs.append(Leg(**d))
+        p = plan(legs, self.env, self._v(), self.m)
+        self.assertAlmostEqual(p.total_loiter_hours, 2.25, places=12)
+        self.assertAlmostEqual(p.total_loiter_hours,
+                               sum(l.loiter_hours for l in p.legs), places=12)
+        self.assertAlmostEqual(p.total_loiter_litres,
+                               sum(l.loiter_litres for l in p.legs), places=12)
+        # Already counted in the mission totals — a tile that double-counted
+        # would read plausibly and be wrong.
+        base = plan(self.legs, self.env, self._v(), self.m)
+        self.assertAlmostEqual(p.total_hours - base.total_hours, 2.25, places=12)
+        self.assertAlmostEqual(p.total_litres - base.total_litres,
+                               p.total_loiter_litres, places=9)
+
+    def test_a_plan_with_no_holds_totals_zero(self):
+        p = plan(self.legs, self.env, self._v(), self.m)
+        self.assertEqual(p.total_loiter_hours, 0.0)
+        self.assertEqual(p.total_loiter_litres, 0.0)
+
     def test_a_negative_hold_is_refused(self):
         with self.assertRaises(ValueError) as cm:
             plan(self._with_loiter(0, -1.0), self.env, self._v(), self.m)
