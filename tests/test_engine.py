@@ -17,9 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from engine import (HOME_MARKS_KM, KM_PER_NM, Environment, Leg,  # noqa: E402
-                    Model, Vessel, load_model, max_survey_length,
-                    max_survey_lines, plan, plan_leg)
+from engine import (HOME_MARKS_KM, KM_PER_NM, WAYPOINTS_KM,  # noqa: E402
+                    Environment, Leg, Model, Vessel, default_waypoints,
+                    load_model, max_survey_length, max_survey_lines, plan,
+                    plan_leg)
 
 # Coefficients as published in the analysis workbook, retyped here on purpose:
 # if model.json drifts from the workbook, these tests break.
@@ -837,7 +838,7 @@ class TestGaugeDenominatedReserve(unittest.TestCase):
 
 
 class TestMissionClock(unittest.TestCase):
-    """Elapsed time, clock times, and the distance-from-home marks."""
+    """Elapsed time, clock times, and the mission waypoints."""
 
     def setUp(self):
         self.m = Model()
@@ -978,6 +979,95 @@ class TestMissionClock(unittest.TestCase):
                for m in p.marks if m['kind'] == 'range']
         self.assertEqual(seq, [('outbound', 13.0), ('outbound', 26.0),
                                ('inbound', 26.0), ('inbound', 13.0)])
+
+    # -- units ------------------------------------------------------------- #
+
+    def test_a_waypoint_in_nm_lands_at_that_many_nautical_miles(self):
+        """The conversion is a MULTIPLY, and this is the test that says so.
+
+        Written after an inverted factor put a 13 km waypoint at 24.08 NM
+        instead of 7.02 — dividing by NM-per-unit instead of multiplying. The
+        assertion is against arithmetic done outside the engine, not against
+        another of its outputs.
+        """
+        p = plan(self.legs, self.env, self._v(), self.m, waypoints=(9.0,),
+                 waypoint_unit='nm')
+        out = next(m for m in p.marks if m['phase'] == 'outbound')
+        self.assertAlmostEqual(out['nm_from_home'], 9.0, places=12)
+        self.assertAlmostEqual(out['km_from_home'], 9.0 * 1.852, places=12)
+        self.assertAlmostEqual(out['elapsed_hours'], 9.0 / 8.0, places=12)
+
+    def test_the_same_distance_in_either_unit_gives_the_same_mark(self):
+        """A unit is a display choice. 18.52 km and 10 NM are the same place,
+        so every physical quantity about the mark must agree exactly."""
+        km = plan(self.legs, self.env, self._v(), self.m,
+                  waypoints=(18.52,), waypoint_unit='km')
+        nm = plan(self.legs, self.env, self._v(), self.m,
+                  waypoints=(10.0,), waypoint_unit='nm')
+        for a, b in zip([m for m in km.marks if m['kind'] == 'range'],
+                        [m for m in nm.marks if m['kind'] == 'range']):
+            self.assertEqual(a['phase'], b['phase'])
+            for key in ('nm_from_home', 'km_from_home', 'elapsed_hours',
+                        'litres_burned'):
+                self.assertAlmostEqual(a[key], b[key], places=9, msg=key)
+
+    def test_switching_units_does_not_move_the_default_waypoints(self):
+        """Choosing NM must not silently relocate a mark — the defaults are the
+        same radii either way, just spelled differently."""
+        km = plan(self.legs, self.env, self._v(), self.m, waypoint_unit='km')
+        nm = plan(self.legs, self.env, self._v(), self.m, waypoint_unit='nm')
+        self.assertEqual([m['nm_from_home'] for m in km.marks if m['kind'] == 'range'],
+                         [m['nm_from_home'] for m in nm.marks if m['kind'] == 'range'])
+        self.assertEqual(default_waypoints('km'), WAYPOINTS_KM)
+
+    def test_the_label_and_unit_follow_the_chosen_unit(self):
+        km = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,),
+                  waypoint_unit='km')
+        nm = plan(self.legs, self.env, self._v(), self.m, waypoints=(7.0,),
+                  waypoint_unit='nm')
+        kmm = next(m for m in km.marks if m['phase'] == 'outbound')
+        nmm = next(m for m in nm.marks if m['phase'] == 'outbound')
+        self.assertEqual(kmm['unit'], 'km')
+        self.assertEqual(nmm['unit'], 'NM')
+        self.assertIn('13 km from home', kmm['label'])
+        self.assertIn('7 NM from home', nmm['label'])
+        self.assertNotIn('km', nmm['label'])
+
+    def test_an_unreachable_waypoint_warns_in_the_chosen_unit(self):
+        """The refusal path has to speak the user's unit too, or the warning
+        names a distance they never typed."""
+        legs = [Leg('out', 'transit', 2.0, 8.0, 0.0),
+                Leg('survey', 'survey', 40.0, 8.0, 90.0),
+                Leg('home', 'transit', 2.0, 8.0, 180.0)]
+        p = plan(legs, self.env, self._v(), self.m, waypoints=(20.0,),
+                 waypoint_unit='nm')
+        self.assertTrue(any('20 NM' in w for w in p.warnings), p.warnings)
+        self.assertFalse(any(' km' in w for w in p.warnings), p.warnings)
+
+    def test_an_unknown_unit_is_refused(self):
+        with self.assertRaises(ValueError) as cm:
+            plan(self.legs, self.env, self._v(), self.m, waypoints=(5.0,),
+                 waypoint_unit='furlongs')
+        self.assertIn('furlongs', str(cm.exception))
+        # ... and the acceptance case, so the refusal is not vacuous.
+        for unit in ('km', 'nm', 'NM', ' Km '):
+            p = plan(self.legs, self.env, self._v(), self.m, waypoints=(5.0,),
+                     waypoint_unit=unit)
+            self.assertEqual(len([m for m in p.marks if m['kind'] == 'range']), 2)
+
+    def test_the_deprecated_spelling_still_works_and_is_km(self):
+        old = plan(self.legs, self.env, self._v(), self.m, home_marks_km=(13.0,))
+        new = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,),
+                   waypoint_unit='km')
+        self.assertEqual([m['nm_from_home'] for m in old.marks if m['kind'] == 'range'],
+                         [m['nm_from_home'] for m in new.marks if m['kind'] == 'range'])
+
+    def test_passing_both_spellings_is_an_error(self):
+        """Silently preferring one would plan marks the caller did not ask for."""
+        with self.assertRaises(ValueError) as cm:
+            plan(self.legs, self.env, self._v(), self.m, waypoints=(5.0,),
+                 home_marks_km=(13.0,))
+        self.assertIn('not both', str(cm.exception))
 
     def test_a_repeated_radius_does_not_double_the_marks(self):
         p = plan(self.legs, self.env, self._v(), self.m,

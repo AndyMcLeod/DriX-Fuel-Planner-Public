@@ -27,7 +27,8 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from engine import (HOME_MARKS_KM, Environment, Leg, Model, Vessel, load_model,
+from engine import (DEFAULT_WAYPOINT_UNIT, Environment, Leg, Model, Vessel,
+                    default_waypoints, load_model,
                     max_survey_length, max_survey_lines, plan)
 
 ROOT = Path(__file__).resolve().parent
@@ -82,26 +83,32 @@ def _parse_start_time(raw) -> dt.datetime | None:
                      f'(2026-08-11T06:30) or HH:MM')
 
 
-def _parse_marks_km(raw) -> tuple[float, ...]:
-    """Distance-from-home radii: a list, a single number, or "13, 26".
+def _parse_waypoints(raw, unit: str) -> tuple[float, ...]:
+    """Mission waypoints: a list, a single number, or "13, 26".
 
-    Absent or empty falls back to the defaults rather than meaning "no marks" —
-    an operator who clears the box wants the standard callouts back, not
-    silence. Passing an explicit empty list is the way to ask for none.
+    Absent or empty falls back to the defaults rather than meaning "no
+    waypoints" — an operator who clears the box wants the standard callouts
+    back, not silence. Passing an explicit empty list is the way to ask for
+    none.
+
+    The defaults come from `default_waypoints(unit)`, so clearing the box in NM
+    restores the same physical radii the km defaults describe, not the same
+    numbers read as NM.
     """
+    fallback = default_waypoints(unit)
     if raw is None:
-        return HOME_MARKS_KM
+        return fallback
     if isinstance(raw, (int, float)):
         return (float(raw),)
     if isinstance(raw, str):
         parts = raw.replace(',', ' ').split()
-        return tuple(float(p) for p in parts) or HOME_MARKS_KM
-    return tuple(float(x) for x in raw) or HOME_MARKS_KM
+        return tuple(float(p) for p in parts) or fallback
+    return tuple(float(x) for x in raw) or fallback
 
 
 def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
                                         dict | None, dt.datetime | None,
-                                        tuple[float, ...]]:
+                                        tuple[float, ...], str]:
     env_in = body.get('environment') or {}
     env = Environment(
         wmo_sea_state=int(env_in.get('wmo_sea_state', 2)),
@@ -138,8 +145,15 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         override = {int(k): float(v) for k, v in body['sea_state_override'].items()}
 
     start_time = _parse_start_time(body.get('start_time'))
-    marks_km = _parse_marks_km(body.get('home_marks_km'))
-    return legs, env, vessel, override, start_time, marks_km
+    # `home_marks_km` is the deprecated body key and is always km, so it pins
+    # the unit when it is the one supplied. The engine rejects an unknown unit;
+    # it is not this shim's job to second-guess it.
+    unit = str(body.get('waypoint_unit') or DEFAULT_WAYPOINT_UNIT)
+    raw = body.get('waypoints')
+    if raw is None and 'home_marks_km' in body:
+        raw, unit = body['home_marks_km'], 'km'
+    waypoints = _parse_waypoints(raw, unit)
+    return legs, env, vessel, override, start_time, waypoints, unit
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -222,7 +236,8 @@ class Handler(BaseHTTPRequestHandler):
         if body is None:
             return
         try:
-            legs, env, vessel, override, start_time, marks_km = _parse_request(body)
+            (legs, env, vessel, override, start_time,
+             waypoints, unit) = _parse_request(body)
         except (TypeError, ValueError) as exc:
             return self._error(400, f'could not read the request: {exc}')
 
@@ -230,7 +245,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if route == '/api/plan':
                 result = plan(legs, env, vessel, model, override,
-                              start_time=start_time, home_marks_km=marks_km)
+                              start_time=start_time, waypoints=waypoints,
+                              waypoint_unit=unit)
                 return self._json(200, result.to_dict())
 
             out = {'max_survey_nm': max_survey_length(legs, env, vessel, model,

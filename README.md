@@ -337,14 +337,14 @@ firmware that adds topics fails the run rather than shipping blank rows.
 | Route | Body | Returns |
 |---|---|---|
 | `GET /api/model` | — | `model.json` |
-| `POST /api/plan` | `{environment, vessel, legs, start_time?, home_marks_km?}` | full plan |
+| `POST /api/plan` | `{environment, vessel, legs, start_time?, waypoints?, waypoint_unit?}` | full plan |
 | `POST /api/max-survey` | same | longest survey holding the reserve |
 
 ```bash
 curl -s localhost:8765/api/plan -H 'Content-Type: application/json' -d '{
   "environment": {"wmo_sea_state": 3, "wind_speed_kt": 15, "wind_from_deg": 270},
   "vessel": {"capacity_l": 250, "reserve_fraction": 0.25, "start_level_fraction": 1.0},
-  "start_time": "2026-08-11T06:30", "home_marks_km": [13, 26],
+  "start_time": "2026-08-11T06:30", "waypoints": [13, 26], "waypoint_unit": "km",
   "legs": [
     {"name":"out","kind":"transit","distance_nm":25,"speed_kt":7,"course_deg":90},
     {"name":"survey","kind":"survey","distance_nm":120,"speed_kt":8,"course_deg":0},
@@ -381,11 +381,24 @@ first leg, distance still to run on the last. The planner has no position model
 — legs are distances and courses, never positions — so those are the only two
 honest readings of it.
 
-**Radii default to 13 km and 26 km**, each timed twice. `home_marks_km` takes a
-list, a bare number, or a string like `"13, 26"`; repeats are deduplicated and
-an absent or empty value falls back to the defaults rather than meaning "no
-marks". Radii are independent — a transit that clears 13 km but never reaches
-26 gets the inner pair and a warning for the outer.
+**Mission waypoints default to 13 km and 26 km**, each timed twice. `waypoints`
+takes a list, a bare number, or a string like `"13, 26"`; repeats are
+deduplicated and an absent or empty value falls back to the defaults rather than
+meaning "no waypoints". Waypoints are independent — a transit that clears 13 km
+but never reaches 26 gets the inner pair and a warning for the outer.
+
+**`waypoint_unit` is `"km"` (default) or `"nm"`**, and it is a *display* choice:
+it decides how the values you supply are read and how each mark is labelled, and
+**it never moves a waypoint**. Omit the values and you get the same physical
+radii either way — 13 and 26 km, which read as 7.019 and 14.039 NM. The UI
+converts what you have typed when you change the selector, for the same reason.
+Every mark carries both `km_from_home` and `nm_from_home` whatever unit was
+chosen, plus `from_home` and `unit` in the chosen one, so two plans made in
+different units can be compared without converting anything.
+
+`home_marks_km` is the previous spelling, always km, and still works when
+`waypoints` is absent. Supplying both is an error rather than a precedence
+puzzle.
 
 A leg shorter than the range mark produces a warning rather than a silently
 missing row; a short return leg means the vehicle is already inside the radius

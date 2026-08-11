@@ -88,11 +88,18 @@
           <input type="datetime-local" id="startTime">
         </label>
         <label class="field">
-          <span>Home marks <em>km</em></span>
-          <input type="text" id="homeMarkKm" value="13, 26"
+          <span>Mission waypoints</span>
+          <input type="text" id="waypoints" value="13, 26"
                  inputmode="decimal" placeholder="13, 26">
         </label>
-        <div class="field">
+        <label class="field">
+          <span>Waypoint units</span>
+          <select id="waypointUnit">
+            <option value="km" selected>Kilometres</option>
+            <option value="nm">Nautical miles</option>
+          </select>
+        </label>
+        <div class="field span2">
           <span>Back alongside</span>
           <output class="readout" id="finishOut">&mdash;</output>
         </div>

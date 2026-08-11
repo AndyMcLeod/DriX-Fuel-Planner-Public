@@ -54,7 +54,40 @@ KM_PER_NM = 1.852
 # still to run on the last), because the planner has no geometry: legs are
 # distances and courses, never positions. A leg shorter than a radius is
 # reported as already inside it rather than silently skipped.
-HOME_MARKS_KM = (13.0, 26.0)
+WAYPOINTS_KM = (13.0, 26.0)
+
+# NAUTICAL MILES PER ONE UNIT — so converting a waypoint to NM MULTIPLIES by
+# this and never divides. The engine is NM-native everywhere else (legs are
+# distance_nm), so a waypoint is converted once, on the way in, and the unit is
+# carried only to label the result.
+NM_PER_WAYPOINT_UNIT = {'km': 1.0 / KM_PER_NM, 'nm': 1.0}
+DEFAULT_WAYPOINT_UNIT = 'km'
+
+# Deprecated alias. The feature is "mission waypoints" now; this name is kept
+# because it is the one the published API documented.
+HOME_MARKS_KM = WAYPOINTS_KM
+
+
+def default_waypoints(unit: str = DEFAULT_WAYPOINT_UNIT) -> tuple[float, ...]:
+    """The default radii, expressed in `unit`.
+
+    The defaults are the SAME PHYSICAL DISTANCES whatever unit is asked for —
+    13 km and 26 km, which read as 7.02 and 14.04 in NM. Choosing a unit is a
+    display decision; it must never quietly move a mark to a different place on
+    the track.
+    """
+    nm_per_unit = _nm_per_unit(unit)
+    return tuple(km / KM_PER_NM / nm_per_unit for km in WAYPOINTS_KM)
+
+
+def _nm_per_unit(unit: str) -> float:
+    """Nautical miles per one unit of `unit`. Multiply a waypoint by this."""
+    try:
+        return NM_PER_WAYPOINT_UNIT[str(unit).strip().lower()]
+    except KeyError:
+        raise ValueError(
+            f'unknown waypoint unit "{unit}" — choose from '
+            f'{", ".join(sorted(NM_PER_WAYPOINT_UNIT))}') from None
 
 
 def load_model(path: Path | str = MODEL_PATH) -> dict[str, Any]:
@@ -477,7 +510,7 @@ class PlanResult:
     tank_volume_l: float | None = None
     gauge_unlocated_l: float | None = None
     # -- Mission clock. `marks` are the timed callouts, chronological: the
-    # distance-from-home crossings (see HOME_MARKS_KM for what that means here)
+    # distance-from-home crossings (see WAYPOINTS_KM for what that means here)
     # and the mission-phase changes. Each carries a 'kind' of 'range'|'phase'.
     start_iso: str | None = None
     start_clock: str | None = None
@@ -595,8 +628,9 @@ def _clock(start: dt.datetime | None, hours: float) -> tuple[str | None, str | N
 
 
 def _mission_marks(results: list[LegResult], cum_l: list[float],
-                   mark_kms: tuple[float, ...], start: dt.datetime | None,
-                   prof: GaugeProfile | None, ind_start: float
+                   waypoints: tuple[float, ...], start: dt.datetime | None,
+                   prof: GaugeProfile | None, ind_start: float,
+                   unit: str = DEFAULT_WAYPOINT_UNIT
                    ) -> tuple[list[dict[str, Any]], list[str]]:
     """The mission's timed callouts, in chronological order.
 
@@ -655,31 +689,39 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
     # -- fixed distances from home, along the planned track ----------------- #
     # Deduplicated so a repeated radius cannot produce a doubled mark; the
     # chronological sort at the end puts each pair where it belongs.
-    for mark_km in sorted({float(k) for k in mark_kms}):
-        mark_nm = mark_km / KM_PER_NM
+    #
+    # `waypoints` are in `unit`; everything downstream is NM. Each mark carries
+    # BOTH km and NM regardless of the unit chosen, because the unit is a
+    # display choice and a consumer should not have to convert to compare two
+    # plans made in different units.
+    nm_per_unit = _nm_per_unit(unit)
+    label_unit = 'km' if unit.strip().lower() == 'km' else 'NM'
+    for value in sorted({float(w) for w in waypoints}):
+        mark_nm = value * nm_per_unit
         if mark_nm <= 0:
             continue
+        extra = {'km_from_home': mark_nm * KM_PER_NM, 'nm_from_home': mark_nm,
+                 'from_home': value, 'unit': label_unit}
         first = results[0]
         if first.distance_nm >= mark_nm:
             add(0, mark_nm, 'range', 'outbound',
-                f'{mark_km:g} km from home (outbound)',
-                {'km_from_home': mark_km, 'nm_from_home': mark_nm})
+                f'{value:g} {label_unit} from home (outbound)', extra)
         else:
             notes.append(
-                f'No outbound {mark_km:g} km mark: the first leg is '
+                f'No outbound {value:g} {label_unit} waypoint: the first leg is '
                 f'{first.distance_nm:.1f} NM, shorter than the {mark_nm:.2f} NM '
-                f'the mark sits at.')
+                f'the waypoint sits at.')
 
         last = len(results) - 1
         if results[last].distance_nm >= mark_nm:
             add(last, results[last].distance_nm - mark_nm, 'range', 'inbound',
-                f'{mark_km:g} km from home (inbound)',
-                {'km_from_home': mark_km, 'nm_from_home': mark_nm})
+                f'{value:g} {label_unit} from home (inbound)', extra)
         else:
             notes.append(
-                f'No inbound {mark_km:g} km mark: the return leg is only '
-                f'{results[last].distance_nm:.1f} NM, so the vehicle is already '
-                f'inside {mark_km:g} km of home when it turns for home.')
+                f'No inbound {value:g} {label_unit} waypoint: the return leg is '
+                f'only {results[last].distance_nm:.1f} NM, so the vehicle is '
+                f'already inside {value:g} {label_unit} of home when it turns '
+                f'for home.')
 
     # Chronological, so the table reads as the mission runs. Sorting here means
     # a new mark can be added anywhere above without minding the order.
@@ -700,11 +742,21 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
          sensitivity_deltas: tuple[float, ...] = (-0.05, 0.0, 0.05, 0.10, 0.20),
          capacity_scenarios: list[dict[str, Any]] | None = None,
          start_time: dt.datetime | None = None,
-         home_marks_km: float | tuple[float, ...] = HOME_MARKS_KM) -> PlanResult:
+         waypoints: float | tuple[float, ...] | None = None,
+         waypoint_unit: str = DEFAULT_WAYPOINT_UNIT,
+         home_marks_km: float | tuple[float, ...] | None = None) -> PlanResult:
     """Run a full mission plan.
 
     Raises ValueError with all input problems collected, rather than failing on
     the first one.
+
+    `waypoints` are distances from home in `waypoint_unit` ('km' or 'nm').
+    Omitting them uses `default_waypoints(waypoint_unit)` — the same physical
+    radii whichever unit is asked for, because a unit is a display choice and
+    must not move a mark along the track.
+
+    `home_marks_km` is the deprecated spelling, always in km. It is honoured
+    when `waypoints` is not given, so the published API keeps working.
     """
     model = model or Model()
 
@@ -718,18 +770,34 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
                     f'{", ".join(sorted(model.gondolas))}')
     if start_time is not None and not isinstance(start_time, dt.datetime):
         errs.append('start_time must be a datetime, or None for no mission clock')
-    # A bare number is accepted as a single radius, so callers with one mark
+    # The deprecated km-only spelling still works, but only when the current
+    # one is absent — passing both is a contradiction, not something to resolve
+    # by precedence, so it is an error.
+    unit = waypoint_unit
+    if home_marks_km is not None:
+        if waypoints is not None:
+            errs.append('pass waypoints or home_marks_km, not both')
+        else:
+            waypoints, unit = home_marks_km, 'km'
+    try:
+        _nm_per_unit(unit)
+    except ValueError as exc:
+        errs.append(str(exc))
+        unit = DEFAULT_WAYPOINT_UNIT
+    if waypoints is None:
+        waypoints = default_waypoints(unit)
+    # A bare number is accepted as a single radius, so callers with one waypoint
     # need not wrap it in a tuple.
-    if isinstance(home_marks_km, (int, float)):
-        marks_km: tuple[float, ...] = (float(home_marks_km),)
+    if isinstance(waypoints, (int, float)):
+        marks: tuple[float, ...] = (float(waypoints),)
     else:
         try:
-            marks_km = tuple(float(k) for k in home_marks_km)
+            marks = tuple(float(w) for w in waypoints)
         except (TypeError, ValueError):
-            marks_km = ()
-            errs.append('home_marks_km must be a number or a sequence of numbers')
-    if any(k < 0 for k in marks_km):
-        errs.append('distance-from-home marks must not be negative')
+            marks = ()
+            errs.append('waypoints must be a number or a sequence of numbers')
+    if any(w < 0 for w in marks):
+        errs.append('mission waypoints must not be negative')
     if errs:
         raise ValueError('; '.join(errs))
 
@@ -798,8 +866,8 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
     binding_nm = binding_l * (ret.nm_per_l if ret.nm_per_l > 0 else 0.0)
     binding_h = binding_l / ret.fuel_rate_lph if ret.fuel_rate_lph > 0 else 0.0
 
-    marks, mark_notes = _mission_marks(results, cum_l, marks_km,
-                                       start_time, prof, ind_start)
+    marks, mark_notes = _mission_marks(results, cum_l, marks,
+                                       start_time, prof, ind_start, unit)
     start_iso, start_clock = _clock(start_time, 0.0)
     finish_iso, finish_clock = _clock(start_time, total_h)
 

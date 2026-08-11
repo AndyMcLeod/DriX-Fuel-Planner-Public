@@ -60,7 +60,7 @@ Read the per-topic sections below for detail; this is the orientation.
    lines reciprocal. Fuel is summed per line because the fuel law is convex in
    RPM, which the old cancelled-premium survey understated by up to 17%.
 4. **Reserve floor raised 15% → 25%** (Andy). Costs 12% of mission fuel.
-5. **Distance-from-home marks at 13 and 26 km**, in and out, plus survey
+5. **Mission waypoints at 13 and 26 km** (km or NM since 2026-08-11), in and out, plus survey
    arrival and departure, all on a mission clock.
 6. **Reading (A) adopted** for the gauge: it spans the tank and is non-linear.
 
@@ -225,6 +225,43 @@ for imports that mangle the xlsx; it carries no chart.
 It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
+
+## Mission waypoints, and their unit (2026-08-11)
+
+Renamed from "home marks", and the distances now take a unit — `km` (default) or
+`nm`. `plan(..., waypoints=(13.0, 26.0), waypoint_unit='km')`; the body keys are
+`waypoints` / `waypoint_unit`.
+
+**The unit is a DISPLAY choice and must never move a waypoint.** It decides how
+supplied values are read and how a mark is labelled, nothing else. Omitting the
+values gives the same physical radii in either unit — `default_waypoints(unit)`
+returns 13/26 km as 7.019/14.039 NM — because a plan whose callouts jumped when
+someone flipped a selector would be a genuine trap. Three tests pin this and a
+mutation that made the defaults ignore the unit is killed by them.
+
+**`NM_PER_WAYPOINT_UNIT` is named for the direction of the conversion**:
+nautical miles *per one unit*, so converting a waypoint to NM **multiplies**. It
+was originally called `WAYPOINT_UNITS` and the code divided, putting a 13 km
+waypoint at 24.08 NM instead of 7.02. The existing marks tests caught it
+immediately; the name was changed so the next person is not invited to make the
+same mistake.
+
+Every mark carries **both** `km_from_home` and `nm_from_home` regardless of the
+unit chosen, plus `from_home`/`unit` in the chosen one. Two plans made in
+different units are therefore directly comparable — and the unreachable-waypoint
+warnings speak the operator's unit, or they would name a distance nobody typed.
+
+**`home_marks_km` still works** (always km) when `waypoints` is absent, because
+it is the spelling the published API documented. Passing both raises rather than
+resolving by precedence: silently preferring one would plan callouts the caller
+did not ask for. The older mission-clock tests deliberately still call the
+deprecated kwarg, which is what keeps that path exercised.
+
+**In the UI**, changing the selector converts what is already typed. It
+re-renders from unrounded NM values held in `waypointsNm` rather than from the
+box's own text — converting the displayed text each time loses precision to the
+rounding, and 13 km came back as 12.999. `lastRendered` is how an operator's own
+edit is told apart from the script's writing.
 
 ## Mission clock and distance-from-home marks (2026-08-09)
 
@@ -429,8 +466,16 @@ SOURCE_DATE=2026-08-09 python tools/build_report.py /tmp/check.docx
 ```
 
 A malformed value raises rather than falling back to today — a silent fallback
-on a typo would reintroduce exactly the spurious diff this removes. The
-endurance sheet carries no date and needs no pin.
+on a typo would reintroduce exactly the spurious diff this removes.
+
+**The endurance sheet is the exception, and not in the way this file used to
+say.** It has no *title-page* date to pin, but openpyxl stamps
+`docProps/core.xml` with `dcterms:created`/`modified` at write time, so the
+`.xlsx` **can never rebuild byte-identically** and will always show as modified
+after a rebuild. Do not read that as a content change: compare the XML members
+excluding `docProps`. Rebuilding all four documents on 2026-08-11 changed
+nothing but zip metadata in the three `.docx` and those two timestamps in the
+`.xlsx`, so none of them were committed.
 
 **If you change `docx_style`, re-run all four builders and diff the output.**
 The migration was held to exactly that standard: each builder was run before and

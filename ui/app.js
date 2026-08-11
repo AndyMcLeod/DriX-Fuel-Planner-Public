@@ -72,12 +72,54 @@ async function boot() {
   ['windSpeed', 'windFrom', 'outCourse', 'surCourse', 'homeCourse'].forEach((id) =>
     $(id).addEventListener('input', drawRose));
 
+  $('waypointUnit').addEventListener('change', onWaypointUnitChange);
+
   $('planForm').addEventListener('submit', (e) => { e.preventDefault(); doPlan(); });
   $('maxBtn').addEventListener('click', doMaxSurvey);
 
   onSeaChange();
   refreshDerived();
   drawRose();
+}
+
+const KM_PER_NM = 1.852;
+// What the waypoint box is currently written in. Needed because the <select>
+// already holds the NEW unit by the time the change event fires, and the
+// conversion needs the old one.
+let waypointUnit = 'km';
+// The waypoints in NM, authoritative, and the exact string last written to the
+// box. Converting the DISPLAYED text on every toggle loses precision to the
+// rounding each time — 13 km came back as 12.999 — so the unrounded values are
+// kept here and re-rendered instead. `lastRendered` is how an operator's own
+// edit is told apart from our own writing.
+let waypointsNm = null;
+let lastRendered = null;
+
+function onWaypointUnitChange() {
+  const next = $('waypointUnit').value;
+  if (next === waypointUnit) return;
+  // Switching units is a DISPLAY choice and must not move a waypoint: the
+  // values are converted so they stay in the same place on the track. Leaving
+  // the numbers alone would quietly push a 13 km callout out to 13 NM — very
+  // nearly twice as far.
+  if (waypointsNm === null || $('waypoints').value !== lastRendered) {
+    const perUnit = waypointUnit === 'km' ? 1 / KM_PER_NM : 1;
+    waypointsNm = ($('waypoints').value.match(/[\d.]+/g) || []).map((v) => Number(v) * perUnit);
+  }
+  waypointUnit = next;
+  renderWaypoints();
+}
+
+function renderWaypoints() {
+  const box = $('waypoints');
+  const perNm = waypointUnit === 'km' ? KM_PER_NM : 1;
+  if (waypointsNm && waypointsNm.length) {
+    lastRendered = waypointsNm
+      .map((nm) => String(Number((nm * perNm).toFixed(3))))
+      .join(', ');
+    box.value = lastRendered;
+  }
+  box.placeholder = waypointUnit === 'km' ? '13, 26' : '7.019, 14.039';
 }
 
 function onSeaChange() {
@@ -131,9 +173,11 @@ function buildBody() {
     ],
     // Blank start time is sent as null: elapsed hours only, no clock.
     start_time: $('startTime').value || null,
-    // Comma- or space-separated radii, e.g. "13, 26". Blank falls back to
-    // the model defaults server-side rather than silently meaning "none".
-    home_marks_km: ($('homeMarkKm').value.match(/[\d.]+/g) || []).map(Number),
+    // Comma- or space-separated distances, e.g. "13, 26", in the selected
+    // unit. Blank falls back to the model defaults server-side rather than
+    // silently meaning "none".
+    waypoints: ($('waypoints').value.match(/[\d.]+/g) || []).map(Number),
+    waypoint_unit: $('waypointUnit').value,
   };
 }
 
