@@ -226,6 +226,43 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## Max survey fills in the line count (2026-08-11)
+
+Pressing **Max survey for the reserve** now writes the solved count into the
+Lines field whenever a line length is set. Nothing was computed to make this
+work — `max_survey_lines()` already returned the count and the API already sent
+it; the UI was only *printing* it. The change is four lines of write-back plus a
+`refreshDerived()` so the Survey-distance readout cannot show a total that
+disagrees with its own inputs.
+
+**A blank Lines field is the case the button exists for, and it used to 422.**
+`Leg.validate` rejects a line length with no count (`lines must be a whole
+number, 1 or more`), so the request never reached the solver. The UI now sends a
+probe count of 1 when the length is set and the count is not. **The answer does
+not depend on the probe** — `max_survey_lines` searches upward from 1 — but the
+engine's note compares the answer against the count that was *requested*, so
+after a probe it would read "the planned 1 lines fit, with room for 35 more":
+true, and useless. That note is suppressed when the probe was used.
+
+**The field stays an ordinary input.** Type over the filled value and the next
+plan or solve uses what you typed; nothing locks it or re-imposes the solved
+number. That is Andy's explicit requirement and `tests/test_ui.py` asserts it
+directly — a future change that made the field `readonly` for tidiness would
+look like an improvement and would not be.
+
+**Lesson from the mutation run here.** The first version of the probe test
+asserted only that `leg.lines = 1` appeared in the function, and **survived**
+`if (false) leg.lines = 1;` — the text was still there while the probe was dead.
+A static test that matches a bare fragment tests the source, not the behaviour.
+It now pins the guard and what `probed` is derived from. All six mutants die:
+locking the field, disabling it, dropping the write-back, dropping the readout
+refresh, disabling the probe, and inverting its condition.
+
+These remain source assertions. The behaviour was verified in the browser
+instead: blank Lines with a 10 NM length fills 36 and reads 360.0 NM; a
+pre-entered 3 fills to 36 and keeps the engine's planned-vs-fits note; typing 20
+over the filled value sticks, plans 20, and returns 200.0 NM in the table.
+
 ## Three leg orders, and only the visual one differs (2026-08-11)
 
 The survey block **reads below both transits** (Andy's call), while the form is

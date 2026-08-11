@@ -101,5 +101,56 @@ class TestLegOrder(unittest.TestCase):
                          sorted(self._request_leg_names()))
 
 
+class TestMaxSurveyAutofill(unittest.TestCase):
+    """The Max-survey button writes its answer into the line-count field.
+
+    Andy, 2026-08-11: generate the count from the button when the line length is
+    filled in, and STILL ALLOW MANUAL EDITING afterwards. The second half is the
+    part a future change could quietly take away — locking the field would look
+    like tidiness — so it is asserted rather than left to good intentions.
+    """
+
+    def setUp(self):
+        self.html = (UI / 'index.html').read_text(encoding='utf-8')
+        self.js = (UI / 'app.js').read_text(encoding='utf-8')
+
+    def _max_survey_body(self) -> str:
+        body = re.search(r'async function doMaxSurvey\(\) \{(.*?)\n\}',
+                         self.js, re.DOTALL)
+        self.assertIsNotNone(body, 'could not find doMaxSurvey()')
+        return body.group(1)
+
+    def test_the_line_count_field_stays_editable(self):
+        """The explicit requirement. An auto-filled value the operator cannot
+        type over would be a worse tool than one that never filled it."""
+        tag = re.search(r'<input[^>]*id="surLines"[^>]*>', self.html)
+        self.assertIsNotNone(tag, 'surLines input not found')
+        self.assertNotRegex(tag.group(0), r'\breadonly\b')
+        self.assertNotRegex(tag.group(0), r'\bdisabled\b')
+
+    def test_the_button_writes_the_count_back_and_refreshes_the_readout(self):
+        body = self._max_survey_body()
+        self.assertRegex(body, r"\$\('surLines'\)\.value\s*=")
+        # Survey distance is derived from the count, so it must be recomputed
+        # or the form shows a total that no longer matches its own inputs.
+        self.assertIn('refreshDerived()', body)
+
+    def test_a_blank_line_count_is_probed_rather_than_rejected(self):
+        """A line length with no count is the case the button exists for, and
+        the engine rejects that pair outright — so the request carries a probe
+        count. Without it the button 422s exactly when it is most wanted.
+
+        This pins the GUARD, not just the assignment. A first version asserted
+        only that `leg.lines = 1` appeared somewhere, and survived a mutation to
+        `if (false) leg.lines = 1;` — the text was still there while the probe
+        was dead. Matching a bare fragment tests the source, not the behaviour.
+        """
+        body = self._max_survey_body()
+        self.assertRegex(body, r'if\s*\(probed\)\s*leg\.lines\s*=\s*1')
+        # ...and that `probed` means what its name says: a length with no count.
+        self.assertRegex(body, r'probed\s*=\s*haveLength\s*&&\s*!\(leg\.lines\s*>\s*0\)')
+        self.assertRegex(body, r'haveLength\s*=.*line_length_nm\s*>\s*0')
+
+
 if __name__ == '__main__':
     unittest.main()

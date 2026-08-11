@@ -202,8 +202,19 @@ async function doPlan() {
 
 async function doMaxSurvey() {
   $('maxOut').textContent = 'Solving…';
+  const body = buildBody();
+  const leg = body.legs.find((l) => l.kind === 'survey');
+  const haveLength = Boolean(leg) && leg.line_length_nm > 0;
+  // A line length with no count is precisely what this button is for — the area
+  // sets the line length, the fuel decides how many you get. The engine rejects
+  // that pair outright (a length needs a count), so probe with a single line.
+  // The ANSWER does not depend on the probe: the search runs upward from 1. Only
+  // the "planned vs fits" wording would, which is why the probe is tracked and
+  // that wording suppressed when it was used.
+  const probed = haveLength && !(leg.lines > 0);
+  if (probed) leg.lines = 1;
   try {
-    const { max_survey_nm: nm, lines: L } = await post('/api/max-survey', buildBody());
+    const { max_survey_nm: nm, lines: L } = await post('/api/max-survey', body);
     if (!(nm > 0)) {
       $('maxOut').textContent =
         'Even a zero-length survey breaches the reserve on these transits.';
@@ -213,14 +224,27 @@ async function doMaxSurvey() {
     // one run; the continuous distance is the backstop for a survey given as
     // a plain distance.
     if (L) {
+      // Write the count back into the form. It stays an ordinary input — type
+      // over it and the new value is what the next plan or solve uses; nothing
+      // here locks it or re-imposes the solved number.
+      let filled = '';
+      if (haveLength && L.lines > 0 && String(L.lines) !== $('surLines').value) {
+        $('surLines').value = String(L.lines);
+        refreshDerived();
+        filled = ' Lines set to <strong>' + L.lines + '</strong> — edit it to plan fewer.';
+      }
       const head = L.lines === 0
         ? '<strong>Not even one line fits</strong> — the transits alone reach the floor.'
         : `Fuel allows <strong>${L.lines} lines</strong> of ${fmt(L.line_length_nm, 1)} NM `
           + `— ${fmt(L.distance_nm, 1)} NM of survey.`;
-      const tail = L.completes
-        ? `<span class="ok">${escapeHtml(L.note)}</span>`
-        : `<span class="bad">${escapeHtml(L.note)}</span>`;
-      $('maxOut').innerHTML = `${head} ${tail}`;
+      // The engine's note compares the answer against the count that was
+      // REQUESTED. After a probe that count was invented here, so the note
+      // would report fitting one line with room for more — true, and useless.
+      const tail = probed ? ''
+        : L.completes
+          ? `<span class="ok">${escapeHtml(L.note)}</span>`
+          : `<span class="bad">${escapeHtml(L.note)}</span>`;
+      $('maxOut').innerHTML = `${head} ${tail}${filled}`;
     } else {
       $('maxOut').textContent =
         `Longest survey that still returns at or above the reserve: ${fmt(nm, 1)} NM.`;
