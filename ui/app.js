@@ -147,6 +147,7 @@ function addLoiterMinutes(id, minutes) {
   // 0.7500000000000001 on the third press.
   box.value = String(Number(next.toFixed(4)));
   refreshHolding();
+  drawRose();
 }
 
 /** Mark legs that are holding, so a delay typed in and forgotten is visible. */
@@ -165,9 +166,10 @@ function wireLoiter() {
     b.addEventListener('click', () => {
       $(b.dataset.loiterClear).value = '0';
       refreshHolding();
+      drawRose();
     }));
   LOITER_LEGS.forEach((p) => {
-    $(p + 'Loiter').addEventListener('input', refreshHolding);
+    $(p + 'Loiter').addEventListener('input', () => { refreshHolding(); drawRose(); });
     // Changing the unit CONVERTS what is typed, exactly as the waypoint unit
     // does: 90 min is 1.5 h, and a unit switch must not silently redefine a
     // delay as 24x longer.
@@ -180,6 +182,7 @@ function wireLoiter() {
         box.value = String(Number((toHours ? v / 60 : v * 60).toFixed(4)));
       }
       refreshHolding();
+      drawRose();
     });
   });
 }
@@ -471,6 +474,16 @@ function hm(hours) {
   return h ? `${h} h` : `${m} min`;
 }
 
+/** Compact duration for the rose, where '2 h 30 min' will not fit: '45m',
+ *  '2h', '2h30'. The tile and the leg notes keep the long form. */
+function hmShort(hours) {
+  const totalMin = Math.round((Number(hours) || 0) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
 const tile = (k, v, u, cls = '') =>
   `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div>` +
   `<div class="u">${u}</div></div>`;
@@ -483,9 +496,9 @@ function drawRose() {
   const curSet = Number($('currentSet').value) || 0;
   const curKt = Number($('currentSpeed').value) || 0;
   const legs = [
-    { c: Number($('outCourse').value) || 0, label: 'out' },
-    { c: Number($('surCourse').value) || 0, label: 'survey' },
-    { c: Number($('homeCourse').value) || 0, label: 'home' },
+    { c: Number($('outCourse').value) || 0, label: 'out', hold: loiterHours('out') },
+    { c: Number($('surCourse').value) || 0, label: 'survey', hold: loiterHours('sur') },
+    { c: Number($('homeCourse').value) || 0, label: 'home', hold: loiterHours('home') },
   ];
   const pt = (deg, r) => {
     const a = (deg - 90) * Math.PI / 180;
@@ -500,7 +513,7 @@ function drawRose() {
             font-size="10" fill="var(--ink-soft)">${lab}</text>`;
   });
 
-  legs.forEach(({ c, label }) => {
+  legs.forEach(({ c, label, hold }) => {
     const [x, y] = pt(c, R - 6);
     // colour by how much this course works with or against the wind
     const rel = Math.cos((c - windFrom) * Math.PI / 180);
@@ -508,9 +521,21 @@ function drawRose() {
       : rel > 0.25 ? 'var(--bad)' : rel < -0.25 ? 'var(--ok)' : 'var(--ink-soft)';
     s += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${col}"
             stroke-width="2.5" stroke-linecap="round"/>`;
+    // A hold has no bearing, so it is NOT drawn as a direction — that would be
+    // inventing geometry the delay does not have. It is drawn where it happens:
+    // a marker at the OUTBOARD end of the leg's own line, which is where the
+    // engine takes it, and the duration rides the leg's OWN label rather than
+    // getting a text of its own. A separate text one ring inboard collided with
+    // the label it belonged to on any east-west leg — measured, not guessed.
+    if (hold > 0) {
+      s += `<circle cx="${x}" cy="${y}" r="4" fill="var(--warn)"
+              stroke="var(--panel)" stroke-width="1"/>`;
+    }
     const [tx, ty] = pt(c, R - 20);
+    const held = hold > 0
+      ? ` <tspan fill="var(--warn)">${hmShort(hold)}</tspan>` : '';
     s += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="8"
-            fill="${col}">${label}</text>`;
+            fill="${col}">${label}${held}</text>`;
   });
 
   if (windKt > 0) {
@@ -520,8 +545,10 @@ function drawRose() {
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--wind)"
             stroke-width="3" stroke-linecap="round"
             marker-end="url(#arrow)"/>`;
-    s += `<text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="9"
-            fill="var(--wind)">${windKt} kt</text>`;
+    // Lifted when the current text sits under it, or the two bounding boxes
+    // touch — measured, and it was the wind/current pair that showed it.
+    s += `<text x="${cx}" y="${cy + (curKt > 0 ? -2 : 4)}" text-anchor="middle"
+            font-size="9" fill="var(--wind)">${windKt} kt</text>`;
   }
 
   // The current arrow points where the water GOES — the opposite convention to
@@ -533,7 +560,7 @@ function drawRose() {
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--warn)"
             stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 3"
             marker-end="url(#arrowCur)"/>`;
-    s += `<text x="${cx}" y="${cy + (windKt > 0 ? 15 : 4)}" text-anchor="middle"
+    s += `<text x="${cx}" y="${cy + (windKt > 0 ? 12 : 4)}" text-anchor="middle"
             font-size="9" fill="var(--warn)">${curKt} kt set</text>`;
   }
 

@@ -322,6 +322,24 @@ seaway has never been measured, so the hold carries **no sea-state premium** —
 stated in the leg note rather than silently assumed away. Dropping that sentence
 is a killed mutation.
 
+**On the compass rose**, a held leg gets an amber dot at the **outboard end of
+its own course line** — where the engine takes the hold — and the duration rides
+that leg's label in amber (`out 45m`, `survey 2h30`). Compact form via
+`hmShort()`; the tile and the notes keep the long one.
+
+**A hold is deliberately NOT drawn as a direction.** It has no bearing, and an
+arrow would be inventing geometry the delay does not have. The rose reads the
+FORM, not the plan — unlike the tiles — because it is a live picture of the
+inputs and redraws as you type, switch units or press a quick-add.
+
+**The duration rides the label instead of getting its own text**, and that was
+measured rather than chosen: a separate text one ring inboard collided with the
+label it belonged to on any east-west leg. Checking bounding boxes across the
+rose is worth doing after any change here — it also caught the wind and current
+readouts touching, which is why the wind figure lifts when a current is shown.
+The one overlap that remains, two legs within about 5° of each other, is
+pre-existing and behaves the same with or without holds.
+
 **A `Loiter` summary tile** sits between Mission time and Distance, reading
 `PlanResult.total_loiter_hours` / `total_loiter_litres`. Those are broken out
 of, **not additional to**, `total_hours` and `total_litres` — a test asserts the
