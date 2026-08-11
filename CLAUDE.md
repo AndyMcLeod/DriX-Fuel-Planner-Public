@@ -582,6 +582,38 @@ rename plus the assertion text — say so.
 The identifiers are still throughout **git history**, which is why history has
 to be dealt with separately before this repo can be public.
 
+## Publishing: the public repo is an EXPORT, not a mirror (2026-08-11)
+
+`AndyMcLeod/DriX-Fuel-Planner-Public` is a **separate, MIT-licensed, public**
+repo built as a fresh single-commit tree from this one. It is not a branch and
+not a mirror: this repo's pre-scrub history carries client identifiers
+permanently, so the public copy had to start from nothing.
+
+**`python tools/make_public.py <dest>` is the only supported way to build it.**
+It exports `git archive HEAD` (tracked files only, so gitignored bags and caches
+cannot leak), strips the marked UI commentary, and refuses to finish if any
+client identifier survives.
+
+**Every public/private difference must live in that script.** Anything hand-made
+downstream reverts on the next export — this has now bitten twice:
+
+- a `LICENSE` added only to the public repo would vanish on re-export, which is
+  why the MIT licence lives HERE and travels with the export;
+- the card commentary, if deleted by hand in the public repo, would come back.
+
+**The commentary split is deliberate.** Static explanatory prose is marked
+`<p class="note commentary">` and the public build drops it (Andy: cleaner view
+in public; the private UI keeps every word). The **id-bearing** notes —
+`legNotes`, `gaugeNote`, `maxOut`, `seaNote`, `gondolaNote` — are JS-filled with
+computed output and **must never be stripped**: `legNotes` carries the per-leg
+extrapolation flags, which verification rail 1 calls the product, not noise.
+The script counts what it removes and aborts on a mismatch rather than quietly
+publishing a UI that still explains itself, or one missing a warning.
+
+**`git archive HEAD` reads the last COMMIT.** Uncommitted UI edits are invisible
+to it — the count assertion caught exactly that on its first run. Commit before
+exporting.
+
 ## Launching it: the desktop shortcut (2026-08-11)
 
 `start_planner.bat` at the repo root is the double-click launcher, and

@@ -97,10 +97,6 @@
           <output class="readout" id="finishOut">&mdash;</output>
         </div>
       </div>
-      <p class="note">Leave the start time blank for elapsed hours only. Each
-        radius is timed twice &mdash; outbound on the first leg and inbound on
-        the last &mdash; measured along the planned track. Comma-separated;
-        clearing the box restores the defaults.</p>
     </section>
 
     <section class="card">
@@ -132,11 +128,6 @@
           <div class="field"><span>Survey distance</span>
             <output class="readout" id="surTotal">&mdash;</output></div>
         </div>
-        <p class="note">Alternate lines run the reciprocal bearing. Fuel is summed
-          line by line, not from an averaged premium: the line into the weather
-          costs more than the reciprocal saves, because fuel is convex in RPM.
-          An <strong>odd</strong> line count cannot balance at all &mdash; one
-          direction gets an extra line.</p>
       </div>
 
       <div class="leg">
@@ -161,7 +152,6 @@
     <section class="card compass-card">
       <h2>Geometry</h2>
       <svg id="rose" viewBox="0 0 200 200" role="img" aria-label="Wind and leg courses"></svg>
-      <p class="note">Blue arrow is the wind (pointing the way it blows). Legs are drawn on their courses; green runs with the wind, red into it.</p>
     </section>
   </form>
 
@@ -207,19 +197,10 @@
             <tbody></tbody>
           </table>
         </div>
-        <p class="note">Survey arrival is the start of the first survey leg and
-          departure the end of the last, so a reposition between patches sits
-          inside time on task rather than splitting it.
-          Distance-from-home marks are measured along the planned track: run
-          made good on the first leg, distance still to run on the last. The
-          planner has no position model, so those are the only two honest
-          readings of &ldquo;distance from home&rdquo;.</p>
       </section>
 
       <section class="card">
         <h2>If the sea-state premium is wrong</h2>
-        <p class="note">The premium is an assumption, not a fitted value &mdash; so this band matters
-          more than the single number above.</p>
         <div class="tablewrap">
           <table id="sensTable">
             <thead><tr>
@@ -233,16 +214,6 @@
 
       <section class="card">
         <h2>The tank is 250 L, and the gauge is treated as non-linear</h2>
-        <p class="note">The engineering drawings settle the physical volume at
-          250&nbsp;L on every hull, while the measured band says 2.06&nbsp;L per
-          indicated point &mdash; which only fit together if the gauge reads
-          differently in bands nobody has measured. The planner adopts that
-          reading (<em>A</em>): the 72&ndash;86% band stays at the measured rate
-          and the other 86 points carry the balance, at about 2.57.
-          <strong>This is an inference, not a measurement.</strong> On the
-          conservative reading (<em>B</em>) the gauge speaks only for its own
-          ~206&nbsp;L span and mission fuel drops from 211&nbsp;L to 175&nbsp;L.
-          One drawdown to the floor separates them.</p>
         <p class="note" id="gaugeNote"></p>
         <div class="tablewrap">
           <table id="capTable">
