@@ -1,0 +1,269 @@
+{
+  "_about": "Derived coefficients for the DriX mission fuel planner. Every number here comes from DriX_fuel_efficiency_analysis.xlsx, which in turn derives from DriX_fuel_efficiency_raw_references.xlsx. Provenance is recorded per block. Values marked \"fitted\": true are regressions against measured data; values marked \"fitted\": false are assumptions and are editable in the UI.",
+  "version": "2.6.0",
+  "generated": "2026-08-09",
+  "fuel_vs_rpm": {
+    "_doc": "Primary fuel model. L/h = f0 + f1 * RPM. Fitted over the 2024 speed trials, 1020-2500 rpm, flow-meter measured. This is the workbook's preferred model: RPM predicts fuel at least as well as speed does.",
+    "fitted": true,
+    "source": "Fits!C15:C17 — 2024 speed trials (Daily Log, ref turn1search184)",
+    "f0": -1.7761355709825288,
+    "f1": 0.0024949428685311897,
+    "r2": 0.9722669292637579,
+    "valid_rpm_min": 1020,
+    "valid_rpm_max": 2500
+  },
+  "fuel_vs_speed_cubic": {
+    "_doc": "Alternative fuel model in speed terms. L/h = c0 + c3 * V^3, V in knots. Same data, same fit window. Carried for cross-check only; the planner uses fuel_vs_rpm.",
+    "fitted": true,
+    "source": "Fits!C6:C8",
+    "c0": 0.6765707722148881,
+    "c3": 0.007869592967855945,
+    "r2": 0.9710009061899455
+  },
+  "speed_vs_rpm_2024": {
+    "_doc": "EM712-gondola configuration (2024). kt = b + m * RPM. Retained for reference; planning reads the per-gondola copies in the gondolas block below.",
+    "fitted": true,
+    "source": "Variation!C12:C14 — 2024 trials, 9 points 1020-3000 rpm",
+    "b": 1.1347810132138756,
+    "m": 0.0026240783000814768,
+    "r2": 0.9391298386435688
+  },
+  "speed_vs_rpm_2022": {
+    "_doc": "EM2040-gondola configuration (2022). Retained for reference; planning uses the gondolas block below.",
+    "fitted": true,
+    "source": "Variation!C8:C10 — 2022 shakedown, 7 points",
+    "b": -0.04343717952015602,
+    "m": 0.004033265611920235,
+    "r2": 0.9907114272007865
+  },
+  "gondolas": {
+    "_doc": "Per-gondola configuration, same hull (DriX-8). EM2040 = 2022 data and the gondola fitted NOW; EM712 = the larger, heavier 2024-trials gondola. Each gondola may carry its own fuel_vs_rpm law (the EM2040 one is measured from MCAP logs, Aug 2026); a gondola without one uses the shared engine-side fuel_vs_rpm block with its window. History: before the MCAP refit the EM2040 curve was a transfer of the EM712 fuel law through the 2022 speed curve — the refit validated that transfer to ~6% at 8 kt.",
+    "default": "em2040",
+    "options": {
+      "em2040": {
+        "label": "EM2040 gondola (currently fitted)",
+        "status": "measured",
+        "status_note": "Refitted from 6 days of DriX-8 MCAP logs (04-09 Aug 2026), 4.85 h steady cruise, flow meter vs the PLC thruster-RPM channel (the shaft-RPM sensor is faulted throughout). Fuel law quadratic in RPM, valid 1400-3100 rpm; below ~1200 rpm use the loiter figure. Speed law is SOG-based and carries roughly +/-5% tidal uncertainty. The 2-day-wider evidence base moved efficiency by <=1% anywhere in 5-10 kt against the original 4-day fit, which is the strongest confirmation available that the curve is real.",
+        "speed_vs_rpm": {
+          "b": 0.48606839462590734,
+          "m": 0.003447858749954489,
+          "r2": 0.9558079465339107,
+          "source": "MCAP refit, 6 days 04-09 Aug 2026, cruise segments (17,475 samples / 4.85 h)"
+        },
+        "fuel_vs_rpm": {
+          "kind": "quadratic",
+          "q0": 2.9364356362594624,
+          "q1": -0.002970433167208108,
+          "q2": 1.458113245924223e-06,
+          "r2": 0.9994907370337567,
+          "valid_rpm_min": 1400,
+          "valid_rpm_max": 3100,
+          "source": "MCAP refit — flow meter vs thruster RPM, 6-day cruise bins"
+        },
+        "loiter": {
+          "lph": 0.95,
+          "rpm": 1005,
+          "hours_observed": 20.8,
+          "per_day_lph": [
+            0.85,
+            0.95,
+            0.95,
+            1.05
+          ],
+          "_doc": "Station-keeping/idle burn, median per day across 4 days with loiter time. Day medians span 0.85-1.05 L/h; 0.95 is the central value."
+        }
+      },
+      "em712": {
+        "label": "EM712 gondola (as trialled 2024)",
+        "status": "measured",
+        "status_note": "Speed law and fuel rate measured together, 28 Jun 2024 trials.",
+        "speed_vs_rpm": {
+          "b": 1.1347810132138756,
+          "m": 0.0026240783000814768,
+          "r2": 0.9391298386435688,
+          "source": "2024 trials, 9 points, 1020-3000 rpm"
+        }
+      }
+    }
+  },
+  "heading_effect": {
+    "_doc": "MEASURED magnitude, ASSUMED shape. The 2024 four-heading prop-efficiency test showed a speed spread of +/-6.91% about the four-heading mean at constant RPM, across three tests at two very different RPM settings. That spread mixes wind, sea and current and cannot be decomposed from the available data. The planner applies it as a cosine modulation on required RPM: premium = amplitude * cos(theta), where theta is the angle between the leg course and the direction the wind is coming FROM. Head-on gives the full penalty, following gives the full credit, beam gives none. Scaling with wind speed relative to the reference is an assumption; set wind_exponent to 0 to disable scaling entirely.",
+    "fitted": false,
+    "amplitude_at_reference": 0.06913210895349385,
+    "amplitude_source": "Variation!H47 — mean of three four-heading tests",
+    "reference_wind_kt": 12.0,
+    "reference_wind_source": "Ops_2022 mean recorded wind over the 2022 operational window",
+    "wind_exponent": 2.0
+  },
+  "sea_state_premium": {
+    "_doc": "ASSUMPTION, NOT A FIT. The workbook contains exactly one (sea state, RPM premium) pair: the 2022 operational window ran at Beaufort 3-4 / WMO 2-3 and needs somewhere between 0% and 13% depending on which tank capacity is believed. Binning that window by heave to measure the relationship directly fails outright — see Sensitivity section D. The table below interpolates through that single anchor and extrapolates beyond it on judgement alone. Treat it as a dial to be turned, not a measurement. Codes 5 and above are past the conditions this vehicle surveys in.",
+    "fitted": false,
+    "anchor": "WMO 2-3 supports 0.00 to 0.13 (2022 window); defaults sit inside that bracket. MEASURED calm anchor (MCAP, Aug 2026): across 11k steady-cruise samples at heave-std 0.03-0.13 m (WMO ~1-2), fuel residuals against the measured quadratic law show no motion-driven premium above a +/-2% noise floor — the table's low end is confirmed. The slope into rough water remains unmeasured; only rough-weather runs can fix it.",
+    "table": [
+      {
+        "wmo": 0,
+        "label": "Calm (glassy)",
+        "hs_m": "0",
+        "premium": 0.0
+      },
+      {
+        "wmo": 1,
+        "label": "Calm (rippled)",
+        "hs_m": "0 - 0.1",
+        "premium": 0.01
+      },
+      {
+        "wmo": 2,
+        "label": "Smooth",
+        "hs_m": "0.1 - 0.5",
+        "premium": 0.03
+      },
+      {
+        "wmo": 3,
+        "label": "Slight",
+        "hs_m": "0.5 - 1.25",
+        "premium": 0.08
+      },
+      {
+        "wmo": 4,
+        "label": "Moderate",
+        "hs_m": "1.25 - 2.5",
+        "premium": 0.18
+      },
+      {
+        "wmo": 5,
+        "label": "Rough",
+        "hs_m": "2.5 - 4",
+        "premium": 0.35
+      },
+      {
+        "wmo": 6,
+        "label": "Very rough",
+        "hs_m": "4 - 6",
+        "premium": 0.6
+      }
+    ]
+  },
+  "tank_volume": {
+    "_doc": "PHYSICAL tank volume, read off the DriX engineering drawings (Andy, 2026-08-09). Applies to ALL DriX hulls on ALL missions. This is ESTABLISHED and supersedes every attempt in this repo to infer tank size from operations. Vehicles may leave partially fuelled and may return partially drawn down, so an observed fill or drawdown is a lower bound on this number and never an estimate of it. CRITICAL: this is not the same quantity as the gauge span, and neither is the same as mission fuel. 100 indicated points at the measured 2.06 L/point is 206 L, so about 44 L of this volume is not represented in the gauge's indicated range. Because the reserve policy is written in indicated percent, that 44 L cannot be planned on until it is located — see gauge_calibration.",
+    "fitted": true,
+    "source": "DriX engineering drawings",
+    "litres": 250.0,
+    "applies_to": "all hulls, all missions"
+  },
+  "capacity_options": {
+    "_doc": "NOT tank volumes. The physical tank is 250 L on the drawings (see tank_volume); these are estimates of what the GAUGE SPAN is worth in litres, i.e. 100 indicated points x litres-per-point, and they are what planning has to use because the reserve policy is written in indicated percent. Three independent methods put that span at 205-209 L: the DD2024 refuel (pumped litres, 2.09 L/pt over a nominal 9-97.5%), the 2022 telemetry drawdown (modelled litres, 2.05 L/pt over 54.5-82.5%) and the MCAP flow meter (metered, 2.06 +/- 0.11 L/pt over 72-86%). All three are SLOPES, so a partial fill or a partial drawdown cannot bias them - that changes where on the gauge a window sits, not what a point is worth. The 44 L between the gauge span and the drawing volume is therefore real and unlocated: either the gauge is non-linear across bands nobody has measured, or its indicated range does not cover the whole tank. Top-third data cannot separate those. 'nominal' stays the default (Andy, 2026-08-09) and now coincides with the drawing volume, but note that planning fuel does not follow from it - see the gauge_* fields on every plan result.",
+    "fitted": false,
+    "default": "nominal",
+    "options": [
+      {
+        "key": "nominal",
+        "litres": 250.0,
+        "label": "250 L — physical tank volume (drawings)"
+      },
+      {
+        "key": "gauge",
+        "litres": 206.0,
+        "label": "206 L — measured gauge scale (2.06 L/point)"
+      },
+      {
+        "key": "dd2024",
+        "litres": 209.03954802259886,
+        "label": "209 L — DD2024 refuel event"
+      },
+      {
+        "key": "telemetry",
+        "litres": 204.85237271304956,
+        "label": "205 L — 2022 telemetry, first interval excluded"
+      },
+      {
+        "key": "worstcase",
+        "litres": 173.43402862219133,
+        "label": "173 L — 2022 telemetry as-is (worst case)"
+      }
+    ]
+  },
+  "reserve": {
+    "_doc": "Operating policy: return to port with at least this fraction of tank indicated remaining. A floor, not a target. RAISED FROM 0.15 TO 0.25 (Andy, 2026-08-09). This is a policy decision, not a measurement, and it costs planning fuel: under the adopted reading (A) mission fuel falls from 211.4 L to 185.7 L, about 12%. Note the floor sits deeper into the band that has never been calibrated - every gauge measurement comes from the top third - so a higher floor is more conservative in litres while resting on no better evidence about what the needle means down there. Everything downstream reads this value; nothing hardcodes it.",
+    "fitted": false,
+    "default_fraction": 0.25
+  },
+  "references": {
+    "best_efficiency_nm_per_l": 3.1677465802735782,
+    "best_efficiency_speed_kt": 4.276457883369331,
+    "survey_speed_kt": 8.0,
+    "_doc": "Best measured efficiency was at the 1250 rpm step. Note the standard 8 kt survey speed needs about 2616 rpm, which is ABOVE the 2500 rpm fit ceiling — any leg at that speed is an extrapolation and the planner says so."
+  },
+  "gauge_calibration": {
+    "_doc": "Flow-meter litres per indicated gauge point, measured directly across days with material burn (idle days excluded - their gauge wanders on ~0 fuel). ESTABLISHED: the gauge SCALE is 2.06 +/- 0.11 L/point over the 72-86% band, and two independent methods agree - the DD2024 refuel (pumped litres) gives 2.09 and the 2022 telemetry drawdown 2.05. NOT ESTABLISHED: non-linearity. The per-day figures (2.21 / 2.40 / 1.66) separate by only 1.5 sigma; each day spans 4-5 points at about +/-18%. An earlier reading called that spread non-linearity; that was over-read and is retracted. THE 44 LITRE PROBLEM (2026-08-09): the drawings put the tank at 250 L, but 100 indicated points at 2.06 L/point is 206 L. All three measurements are SLOPES, so partial fills and partial drawdowns cannot explain the gap - those move a window along the gauge, they do not change what a point is worth. So roughly 44 L of the tank is not represented in the indicated range, and there are exactly two readings: (A) the gauge spans the tank and is non-linear, which forces the 86 unmeasured points to average 2.57 L/point, +25% on the measured band; or (B) the gauge covers only ~206 L and is linear, the other 44 L sitting below indicated zero or above indicated full. Mission fuel to the 25% floor is 185.7 L under (A) and 154.5 L under (B) - 31 L, 9.2 h and 74 NM apart. The planner uses (A); see gauge_profile.reading. Top-third data cannot separate them; one drawdown to the floor would, because the two predict burns 25% apart over a span that resolves to 1.3%. All calibration remains from the top third; the reserve band has no direct calibration at all. See DriX8_Fuel_Gauge_Linearity.docx and tools/reserve_band.py.",
+    "fitted": true,
+    "l_per_point": 2.06,
+    "l_per_point_sigma": 0.11,
+    "band_pct": [
+      72,
+      86
+    ],
+    "non_linearity": "unresolved — per-day spread is 1.5 sigma, not significant",
+    "per_day": [
+      {
+        "day": "2026-08-05",
+        "l_per_point": 2.21,
+        "sigma": 0.39,
+        "band": [
+          81,
+          85
+        ]
+      },
+      {
+        "day": "2026-08-06",
+        "l_per_point": 2.4,
+        "sigma": 0.42,
+        "band": [
+          77,
+          81
+        ]
+      },
+      {
+        "day": "2026-08-08",
+        "l_per_point": 1.66,
+        "sigma": 0.23,
+        "band": [
+          72,
+          77
+        ]
+      }
+    ],
+    "cross_check": {
+      "dd2024_refuel_l_per_point": 2.09,
+      "agreement_sigma": 0.3,
+      "_doc": "Independent: 185 L pumped over a 9->95-100% fill."
+    },
+    "source": "D8_2040 MCAP logs, 2026-08-05/06/08"
+  },
+  "gauge_profile": {
+    "_doc": "Which reading of the 44 L gap the planner works to. ADOPTED: 'A' (Andy, 2026-08-09) - the gauge spans the whole tank and is non-linear, so the points outside the measured band carry the balance of the 250 L drawing volume. The engine DERIVES the segments from tank_volume, gauge_calibration.band_pct and l_per_point, so they cannot drift from those and nothing here is a second copy of a number. Under A the measured 72-86% band stays at 2.06 L/point and the other 86 points average 2.57, giving 185.7 L of mission fuel to the 25% floor against 154.5 L under B. THIS IS AN INFERENCE, NOT A MEASUREMENT: it follows from the drawings plus one measured band, and it moves planning fuel 21% in the UNSAFE direction, so it is the one adopted value in this file a drawdown could still overturn. The SHAPE outside the measured band is unconstrained - only the integral (250 L) and the one band are pinned. Uniform-outside-the-band is used because it is neutral; plausible shapes span 210-219 L of mission fuel, so the shape is worth about 9 L where the choice of reading is worth 36 L. Set reading to 'B' to plan on the gauge span alone and ignore the drawings.",
+    "fitted": false,
+    "reading": "A",
+    "adopted": "2026-08-09",
+    "readings": {
+      "A": {
+        "label": "Gauge spans the tank, non-linear (drawings honoured)",
+        "basis": "tank_volume",
+        "shape": "uniform outside the measured band"
+      },
+      "B": {
+        "label": "Gauge linear over its own span (conservative)",
+        "basis": "l_per_point"
+      }
+    }
+  },
+  "exail_static_model": {
+    "_doc": "Decoded live from /drix_8/hardware/fuel_consumption_model (MCAP, Aug 2026). The onboard endurance model is L/h = a*V^2 + c (knots; the b term is unused by its published outputs) with a 250 L tank and a 20% minimum. At 8 kn it gives 6.54 L/h against the measured 3.38 — 1.93x conservative for the EM2040 configuration. Kept for reference and cross-checks; the planner never uses it.",
+    "fitted": false,
+    "a": 0.08451999723911285,
+    "b": -0.3402000069618225,
+    "c": 1.1269999742507935,
+    "tank_capacity_l": 250.0,
+    "min_tank_percentage": 20.0
+  }
+}

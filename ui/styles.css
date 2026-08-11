@@ -1,0 +1,189 @@
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --ink: #16212b;
+  --ink-soft: #5b6b7a;
+  --line: #dbe2e8;
+  --accent: #1f5f8b;
+  --accent-ink: #ffffff;
+  --ok: #1a7f4b;
+  --ok-bg: #e6f4ec;
+  --warn: #9a6400;
+  --warn-bg: #fdf3e0;
+  --bad: #b3261e;
+  --bad-bg: #fdeceb;
+  --wind: #1f77b4;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 33, 48, .06), 0 4px 14px rgba(16, 33, 48, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12181e;
+    --panel: #1a232c;
+    --ink: #e6edf3;
+    --ink-soft: #93a4b3;
+    --line: #2b3947;
+    --accent: #4d9fd6;
+    --accent-ink: #08131c;
+    --ok: #5cc98b;
+    --ok-bg: #14301f;
+    --warn: #e0a94a;
+    --warn-bg: #33280f;
+    --bad: #f08a82;
+    --bad-bg: #3a1a17;
+    --wind: #62b0e8;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* ------------------------------------------------------------------ head */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1.5rem; flex-wrap: wrap;
+  padding: 1rem 1.5rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: .9rem; }
+.mark { font-size: 1.9rem; line-height: 1; }
+h1 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
+.sub { margin: .15rem 0 0; color: var(--ink-soft); font-size: .85rem; }
+
+.verdict {
+  display: flex; flex-direction: column; align-items: flex-end;
+  padding: .5rem .9rem; border-radius: var(--radius); min-width: 15rem;
+  border: 1px solid transparent;
+}
+.verdict.ok  { background: var(--ok-bg);  border-color: var(--ok);  color: var(--ok); }
+.verdict.bad { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+.verdict-label { font-weight: 700; font-size: 1rem; letter-spacing: .02em; }
+.verdict-detail { font-size: .82rem; color: var(--ink-soft); }
+
+/* ----------------------------------------------------------------- layout */
+main {
+  display: grid; grid-template-columns: minmax(340px, 30rem) 1fr;
+  gap: 1.25rem; align-items: start;
+  padding: 1.25rem 1.5rem 2rem;
+  max-width: 1500px; margin: 0 auto;
+}
+@media (max-width: 950px) { main { grid-template-columns: 1fr; } }
+
+.panel { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem 1.1rem;
+  box-shadow: var(--shadow);
+}
+.card h2 {
+  margin: 0 0 .85rem; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--ink-soft); font-weight: 700;
+}
+
+/* ----------------------------------------------------------------- fields */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem .8rem; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem .8rem; }
+.span2 { grid-column: 1 / -1; }
+
+.field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.field > span { font-size: .78rem; color: var(--ink-soft); font-weight: 600; }
+.field em { font-style: normal; opacity: .75; font-weight: 400; }
+
+input, select, output.readout, .readout {
+  font: inherit; font-size: .92rem;
+  padding: .42rem .55rem; width: 100%;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px;
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.readout {
+  background: transparent; border-style: dashed;
+  color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+
+.leg { padding: .7rem 0; border-top: 1px dashed var(--line); }
+.leg:first-of-type { border-top: 0; padding-top: 0; }
+.leg h3 { margin: 0 0 .5rem; font-size: .9rem; }
+
+.note { margin: .55rem 0 0; font-size: .78rem; color: var(--ink-soft); }
+
+.actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
+button {
+  font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+  padding: .5rem .95rem; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+button:hover { border-color: var(--accent); }
+button.primary {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+
+/* --------------------------------------------------------------- results */
+.placeholder {
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 3rem 1rem; text-align: center; color: var(--ink-soft);
+}
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .7rem; }
+.tile {
+  border: 1px solid var(--line); border-radius: 8px; padding: .6rem .7rem;
+  background: var(--bg);
+}
+.tile .k { font-size: .72rem; color: var(--ink-soft); font-weight: 600;
+           text-transform: uppercase; letter-spacing: .05em; }
+.tile .v { font-size: 1.28rem; font-weight: 700; font-variant-numeric: tabular-nums;
+           margin-top: .15rem; }
+.tile .u { font-size: .74rem; color: var(--ink-soft); font-weight: 500; }
+.tile.ok  .v { color: var(--ok); }
+.tile.bad .v { color: var(--bad); }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .86rem; }
+th, td {
+  text-align: right; padding: .4rem .55rem;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+     color: var(--ink-soft); font-weight: 700; }
+th:first-child, td:first-child { text-align: left; }
+tbody tr:last-child td { border-bottom: 0; }
+td { font-variant-numeric: tabular-nums; }
+tr.flag td { background: var(--warn-bg); }
+tr.here td { font-weight: 700; }
+
+.pill { display: inline-block; padding: .08rem .45rem; border-radius: 99px;
+        font-size: .72rem; font-weight: 700; }
+.pill.ok  { background: var(--ok-bg);  color: var(--ok); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+
+.warnings { margin: 0; padding-left: 1.1rem; }
+.warnings li { margin-bottom: .4rem; font-size: .86rem; color: var(--warn); }
+.warnings li.bad { color: var(--bad); font-weight: 600; }
+
+.compass-card svg { width: 100%; max-width: 15rem; margin: 0 auto; display: block; }
+
+footer {
+  max-width: 1500px; margin: 0 auto; padding: 0 1.5rem 2.5rem;
+  color: var(--ink-soft); font-size: .78rem;
+}
+footer p { max-width: 70ch; margin: 0; }
+
+/* Secondary detail inside a table cell — the survey premium swing. */
+.soft { color: var(--ink-soft); font-size: .85em; }
+
+/* Max-survey readout: the shortfall/fits verdict, scoped so it cannot
+   collide with the pill and warning rules above. */
+#maxOut .ok  { color: var(--ok);  font-weight: 600; }
+#maxOut .bad { color: var(--bad); font-weight: 600; }

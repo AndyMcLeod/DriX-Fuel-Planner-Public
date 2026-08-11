@@ -1,0 +1,1923 @@
+{
+ "days": {
+  "2026-08-04T00": {
+   "duration_s": 59688.914114125,
+   "message_count": 6052724,
+   "files": 11
+  },
+  "2026-08-05T00": {
+   "duration_s": 86399.851828608,
+   "message_count": 6826999,
+   "files": 12
+  },
+  "2026-08-06T00": {
+   "duration_s": 86399.878755131,
+   "message_count": 9432999,
+   "files": 15
+  },
+  "2026-08-07T00": {
+   "duration_s": 45409.870857227,
+   "message_count": 4445455,
+   "files": 9,
+   "no_metadata_yaml": true
+  }
+ },
+ "n_topics": 241,
+ "n_params_topics": 77,
+ "total_msgs": 26758177,
+ "groups": [
+  {
+   "title": "Position & attitude (light feeds)",
+   "prefix": "/drix_8/cortix/communications/topic_simplifier/",
+   "intro": "Bandwidth-trimmed navigation feeds produced by the topic simplifier for the comm links. These are the cleanest position/attitude sources in the recording.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_ins",
+     "type": "cortix_msgs/LightIns",
+     "rate": "1.58",
+     "rate_hz": 1.578,
+     "total": 438391,
+     "desc": "Trimmed INS feed from the PHINS: roll, pitch, heading, heave plus alignment/quality statuses and per-receiver GPS fix quality."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_gps",
+     "type": "mdt_msgs/LightGps",
+     "rate": "1.37",
+     "rate_hz": 1.367,
+     "total": 379877,
+     "desc": "Bandwidth-trimmed position feed: latitude, longitude, altitude, COG, SOG (m/s), heading. The recommended position/speed source for analysis \u2014 this was the speed input to the fuel-curve refit."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_bare_tracks",
+     "type": "mdt_msgs/LightGeoTrackArray",
+     "rate": "1.26",
+     "rate_hz": 1.261,
+     "total": 350414,
+     "desc": "Companion raw/unsmoothed variant of the tracked-target list."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_geo_tracks",
+     "type": "mdt_msgs/LightGeoTrackArray",
+     "rate": "1.26",
+     "rate_hz": 1.261,
+     "total": 350324,
+     "desc": "Trimmed tracked-target list (fused AIS/radar/lidar tracks) for the control-centre display."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_coms_info",
+     "type": "cortix_msgs/LightComsInfo",
+     "rate": "0.64",
+     "rate_hz": 0.637,
+     "total": 177126,
+     "desc": "Summary of communication-link states (which links are up, quality) for the HMI."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_auv_gps",
+     "type": "mdt_msgs/LightGps",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Position feed slot for a companion AUV. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/topic_simplifier/light_lars_gps",
+     "type": "mdt_msgs/LightGps",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Position feed slot for the launch-and-recovery system. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "Vehicle status, engine & PLC",
+   "prefix": "/drix_8/cortix/plc/",
+   "intro": "Vehicle-machinery truth from the programmable logic controller.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/plc/low_power_mode",
+     "type": "std_msgs/Bool",
+     "rate": "1.61",
+     "rate_hz": 1.608,
+     "total": 446734,
+     "desc": "Low-power (electrical economy) mode flag."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/vehicle_status",
+     "type": "drix_msgs/DrixOutput",
+     "rate": "1.61",
+     "rate_hz": 1.608,
+     "total": 446772,
+     "desc": "Core vehicle state at ~1.6 Hz: thruster RPM (the working RPM source), rudder angle, fuel gauge percentage, DriX mode (docking/manual/auto), clutch position, keel state, e-stop flags (RC / cable / HMI), low-power and emergency modes, PLC error code, shutdown status."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/winch/status",
+     "type": "cortix_msgs/WinchStatusArray",
+     "rate": "1.58",
+     "rate_hz": 1.576,
+     "total": 438082,
+     "desc": "Payload winch status array (position, load, limits)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/rc/status",
+     "type": "drix_msgs/RemoteController",
+     "rate": "1.57",
+     "rate_hz": 1.57,
+     "total": 436236,
+     "desc": "Remote-controller pendant status: link, buttons, e-stop."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/telemetry/telemetry3",
+     "type": "drix_msgs/Telemetry3",
+     "rate": "1.26",
+     "rate_hz": 1.261,
+     "total": 350389,
+     "desc": "Full PLC telemetry at ~1.3 Hz: engine (oil pressure, coolant/exhaust/gearbox temperatures, hours, load, accelerator), fuel rate (L/h) and total fuel used, compartment temperature/humidity/smoke/water alarms, bilge pumps, battery/alternator electrics, engine diagnostics, sensor-fault flags, sea-water valve, nav light, fog horn. Primary fuel-burn source. Note: shaft_sensor_rpm was faulted throughout these logs \u2014 use thruster_rpm from vehicle_status instead."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/extinguisher/pin",
+     "type": "std_msgs/String",
+     "rate": "0.64",
+     "rate_hz": 0.637,
+     "total": 177093,
+     "desc": "Extinguisher arming-pin state string."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/extinguisher/status",
+     "type": "drix_msgs/ExtinguisherStatusArray",
+     "rate": "0.64",
+     "rate_hz": 0.637,
+     "total": 176973,
+     "desc": "Fire-extinguisher system status per bottle."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/digital_outputs/state",
+     "type": "drix_msgs/DigitalOutputStates",
+     "rate": "0.64",
+     "rate_hz": 0.636,
+     "total": 176699,
+     "desc": "States of the PLC digital output channels (pumps, fans, lights...)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/electronic_breakers/state",
+     "type": "cortix_msgs/ElectronicBreakerChannelStateArray",
+     "rate": "0.64",
+     "rate_hz": 0.635,
+     "total": 176467,
+     "desc": "State of each electronic breaker channel (powered equipment switching)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/batteries/status",
+     "type": "drix_msgs/BatteriesStatus",
+     "rate": "0.40",
+     "rate_hz": 0.396,
+     "total": 109915,
+     "desc": "Battery 1/2 voltage, current and charge/discharge flags plus alternator 1/2 current and fault flags."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/digital_outputs/description",
+     "type": "drix_msgs/DigitalOutputDescriptionArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 27,
+     "desc": "Channel-name map for the digital outputs (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/electronic_breakers/description",
+     "type": "cortix_msgs/ElectronicBreakerUnitDescriptionArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 27,
+     "desc": "Channel-name map for the electronic breakers (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/keel/keep_alive",
+     "type": "std_msgs/Empty",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Keep-alive that must be published while commanding keel motion. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/offsets/status",
+     "type": "drix_msgs/OffsetsStatus",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 27,
+     "desc": "Installation/sensor offsets currently applied by the PLC (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/telemetry/spare_descriptions",
+     "type": "drix_msgs/TelemetrySpareDescriptionArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 28,
+     "desc": "Name/scaling map for the spare analog telemetry channels (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/telemetry/telemetry2",
+     "type": "drix_msgs/Telemetry2",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Legacy PLC telemetry format. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/plc/winch/manual_command",
+     "type": "cortix_msgs/WinchCommand",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 24,
+     "desc": "Manual winch up/down commands issued by the operator."
+    }
+   ]
+  },
+  {
+   "title": "Fuel & endurance",
+   "prefix": null,
+   "intro": "The onboard fuel accounting chain.",
+   "rows": [
+    {
+     "topic": "/drix_8/hardware/fuel_cons_manager/fuel_consumption",
+     "type": "cortix_msgs/FuelConsumption",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273159,
+     "desc": "Onboard endurance projection at ~1 Hz: current burn, remaining distance/time to reserve at current speed and at fixed 4/8/12 kt, burn rate at 4/8/12 kt, and whether the dynamic or static model produced it."
+    },
+    {
+     "topic": "/hardware/fuel_cons_manager/drix_8/status",
+     "type": "cortix_msgs/FuelConsumptionStatus",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273158,
+     "desc": "Fuel-consumption node health: OK / ERROR / FUEL_LIMIT (raised when only the 20% reserve remains)."
+    },
+    {
+     "topic": "/drix_8/hardware/fuel_consumption_model",
+     "type": "cortix_msgs/FuelConsumptionModel",
+     "rate": "0.09",
+     "rate_hz": 0.09,
+     "total": 25014,
+     "desc": "Coefficients of the onboard SOG-quadratic burn model (a\u00b7v\u00b2 + b\u00b7v + c), tank capacity and reserve floor percentage. Note: this static model reads roughly 1.9\u00d7 the measured burn for the EM2040 configuration \u2014 treat its predictions as very conservative."
+    },
+    {
+     "topic": "/drix_8/hardware/average_fuel_rate",
+     "type": "std_msgs/Float32",
+     "rate": "0.07",
+     "rate_hz": 0.065,
+     "total": 17925,
+     "desc": "Smoothed fuel burn (L/h), published about every 15 s."
+    },
+    {
+     "topic": "/drix_8/hardware/average_speed",
+     "type": "std_msgs/Float32",
+     "rate": "0.07",
+     "rate_hz": 0.065,
+     "total": 18034,
+     "desc": "Smoothed speed over ground, the companion to average_fuel_rate."
+    }
+   ]
+  },
+  {
+   "title": "Communication links (vehicle side)",
+   "prefix": "/drix_8/cortix/communications/",
+   "intro": "Drivers and supervisors for every link the DriX carries: Starlink, Iridium, Wi-Fi, MBR, VHF.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/communications/iridium/iridium_status",
+     "type": "cortix_msgs/IridiumStatus",
+     "rate": "9.83",
+     "rate_hz": 9.828,
+     "total": 2731285,
+     "desc": "Iridium link watchdog at ~10 Hz: connection-OK flag plus last/next expected message reception times. Second-highest-volume topic in the recording."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/vehicle_heartbeat",
+     "type": "builtin_interfaces/Time",
+     "rate": "0.64",
+     "rate_hz": 0.637,
+     "total": 176934,
+     "desc": "Vehicle alive-tick (timestamp) sent to the control centre."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/audio_from_hmi/missed_packets",
+     "type": "lib_ros_data_transfer/MissedPackets",
+     "rate": "0.63",
+     "rate_hz": 0.631,
+     "total": 175330,
+     "desc": "Missing-chunk NACK stream for the HMI audio transfer."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/d_starlink/status",
+     "type": "cortix_msgs/StarlinkDishStatus",
+     "rate": "0.40",
+     "rate_hz": 0.397,
+     "total": 110230,
+     "desc": "Starlink dish status mirrored from the dish's local gRPC API (the same API the Starlink Dashboard reads): downlink/uplink throughput, POP ping latency and drop rate, boresight azimuth/elevation, obstruction and outage stats, GPS stats, alerts, ready states, mobility class, Ethernet speed, software-update state."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_recordings/missed_packets",
+     "type": "lib_ros_data_transfer/MissedPackets",
+     "rate": "0.19",
+     "rate_hz": 0.188,
+     "total": 52134,
+     "desc": "Missing-chunk NACK stream for the VHF-recording transfer."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/d_wifi_modem/bandwidth_info",
+     "type": "cortix_msgs/BandwidthInfo",
+     "rate": "0.07",
+     "rate_hz": 0.065,
+     "total": 18042,
+     "desc": "Measured throughput/capacity over the Wi-Fi (near-field broadband) modem link."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/iridium_events",
+     "type": "cortix_msgs/IridiumEvents",
+     "rate": "0.07",
+     "rate_hz": 0.065,
+     "total": 18057,
+     "desc": "Vehicle-side Iridium link events (sessions, send attempts, failures)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_recordings/packets",
+     "type": "lib_ros_data_transfer/Packet",
+     "rate": "0.01",
+     "rate_hz": 0.012,
+     "total": 3363,
+     "desc": "Chunked transfer of VHF audio recordings from the vehicle to the control centre."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/sensor_state",
+     "type": "mdt_msgs/Sensor",
+     "rate": "<0.01",
+     "rate_hz": 0.003,
+     "total": 847,
+     "desc": "Sensor-state events relayed over the Iridium snapshot path."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/firmware_versions",
+     "type": "cortix_msgs/FirmwareVersions",
+     "rate": "<0.01",
+     "rate_hz": 0.001,
+     "total": 260,
+     "desc": "Version inventory of managed firmware components."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/audio_from_hmi/packets",
+     "type": "lib_ros_data_transfer/Packet",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 22,
+     "desc": "Chunked audio transfer from the operator HMI toward the vehicle (VHF/loudhailer voice path)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/cortix_software_version",
+     "type": "std_msgs/String",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 29,
+     "desc": "Cortix software version string of the vehicle stack (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/d_iridium/modem_imei",
+     "type": "std_msgs/UInt64",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 28,
+     "desc": "Vehicle Iridium modem IMEI (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/d_mbr/modem_id",
+     "type": "std_msgs/String",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Kongsberg Maritime Broadband Radio modem identity. No traffic \u2014 MBR link inactive in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/d_wifi_modem/modem_id",
+     "type": "std_msgs/String",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 28,
+     "desc": "Wi-Fi modem identity string (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/firmware_status",
+     "type": "cortix_msgs/FirmwareStatusArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 7,
+     "desc": "Status of managed firmware components (update state per unit)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex/dsc/status",
+     "type": "garmin_cortex_msgs/DscStatus",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Digital Selective Calling status from the Cortex VHF. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex/is_new_message_available",
+     "type": "std_msgs/Bool",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Flag: new VHF message/recording available. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex/status",
+     "type": "garmin_cortex_msgs/GarminCortexStatus",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 34,
+     "desc": "Garmin Cortex VHF unit status."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex/vhf_channels",
+     "type": "garmin_cortex_msgs/VhfChannels",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 31,
+     "desc": "VHF channel table reported by the Cortex unit."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_hmi_sender/is_transfer_audio_hmi_ready",
+     "type": "garmin_cortex_msgs/NotifyTransfer",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 2,
+     "desc": "Handshake: HMI-bound audio transfer ready."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_recordings_receiver/audio_data_to_ihm_debug",
+     "type": "std_msgs/UInt8MultiArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 133,
+     "desc": "Debug tap of decoded VHF audio bytes forwarded to the HMI."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_recordings_receiver/vhf_recordings",
+     "type": "garmin_cortex_msgs/VhfRecordings",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 108,
+     "desc": "Reassembled VHF audio recordings on the control-centre side."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/garmin_cortex_recordings_sender/is_transfer_ready",
+     "type": "garmin_cortex_msgs/NotifyTransfer",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 68,
+     "desc": "Handshake: VHF-recording transfer ready to start."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/digital_outputs/state",
+     "type": "drix_msgs/DigitalOutputStates",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "PLC digital-output snapshot relayed over Iridium (~121 snapshots across the four days)."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/drix_status",
+     "type": "drix_msgs/DrixOutput",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Core vehicle-status (DrixOutput) snapshot relayed over Iridium."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/electronic_breakers/state",
+     "type": "cortix_msgs/ElectronicBreakerChannelStateArray",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Electronic-breaker state snapshot relayed over Iridium."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/gps",
+     "type": "mdt_msgs/Gps",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Position snapshot relayed over Iridium."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/guidance_status",
+     "type": "cortix_msgs/GuidanceStatus",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Guidance-state snapshot relayed over Iridium."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/order_timeout_countdown",
+     "type": "builtin_interfaces/Time",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Countdown to expiry of a pending Iridium order. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/pending_order",
+     "type": "cortix_msgs/IridiumPendingOrder",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Command pending acknowledgement over the Iridium fallback C2 path. No traffic \u2014 Iridium C2 never engaged."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/supervisor/report",
+     "type": "lib_supervisor/SupervisorReport",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Safety-supervisor report snapshot relayed over Iridium."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/telemetry2",
+     "type": "drix_msgs/Telemetry2",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Legacy PLC telemetry snapshot over Iridium. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/communications/iridium/telemetry3",
+     "type": "drix_msgs/Telemetry3",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "PLC telemetry snapshot over Iridium. No traffic in these logs (broadband links stayed up)."
+    }
+   ]
+  },
+  {
+   "title": "Mission & guidance",
+   "prefix": "/drix_8/cortix/mission/guidance_manager/",
+   "intro": "What the vehicle was tasked to do and the paths it planned.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/light_safe_geo_path",
+     "type": "cortix_msgs/GeoPath",
+     "rate": "1.06",
+     "rate_hz": 1.057,
+     "total": 293754,
+     "desc": "Trimmed copy of the deconflicted path the vehicle is actually following."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/guidance_state",
+     "type": "cortix_msgs/GuidanceStatus",
+     "rate": "1.06",
+     "rate_hz": 1.056,
+     "total": 293436,
+     "desc": "Active guidance mode and state (STARTED / STOPPED / PAUSED / FAILED / SELECTED) with description, obstacle-avoidance-active flag and Iridium-mode flag."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/guidance_zone",
+     "type": "mdt_msgs/GeoZone",
+     "rate": "1.06",
+     "rate_hz": 1.056,
+     "total": 293531,
+     "desc": "Geographic containment zone currently enforced by guidance."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/light_escape_geo_path",
+     "type": "cortix_msgs/GeoPath",
+     "rate": "1.06",
+     "rate_hz": 1.056,
+     "total": 293558,
+     "desc": "Trimmed standing escape route (where the vehicle goes on abort)."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/light_preview_geo_path",
+     "type": "cortix_msgs/GeoPath",
+     "rate": "1.06",
+     "rate_hz": 1.056,
+     "total": 293550,
+     "desc": "Trimmed preview of the upcoming path legs."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/initial_geo_path",
+     "type": "cortix_msgs/GeoPath",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 107,
+     "desc": "Mission path as originally loaded (latched per mission)."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/lars/dist_to_lars_m",
+     "type": "std_msgs/Float64",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Distance to the launch-and-recovery system during recovery approach. No traffic \u2014 no LARS operations in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/mission/guidance_manager/lars/lars_relative_speed",
+     "type": "std_msgs/Float64",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Closing speed relative to the LARS during recovery. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "Safety & supervision",
+   "prefix": "/drix_8/cortix/safety/",
+   "intro": "Fault monitors, the master supervisor and its event history.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/safety/supervisor_database/cc/missed_entries",
+     "type": "std_msgs/UInt64MultiArray",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273092,
+     "desc": "History record ids the control centre still lacks (retransmit requests)."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor_database/cc/history_uuid",
+     "type": "std_msgs/String",
+     "rate": "0.65",
+     "rate_hz": 0.651,
+     "total": 180843,
+     "desc": "Identity of the current supervisor history stream (sync bookkeeping)."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor_database/cc/next_available_history_id",
+     "type": "std_msgs/UInt64",
+     "rate": "0.65",
+     "rate_hz": 0.651,
+     "total": 180851,
+     "desc": "Next history record id (sync bookkeeping)."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/estop_ros_driver/captain_status",
+     "type": "estop_msgs/CaptainStatus",
+     "rate": "0.64",
+     "rate_hz": 0.638,
+     "total": 177204,
+     "desc": "Emergency-stop chain / captain-authority status from the e-stop driver."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/diagnostics/compressed_diagnostics",
+     "type": "p_diagnostics_compressor/CompressedDiagnostics",
+     "rate": "0.64",
+     "rate_hz": 0.636,
+     "total": 176683,
+     "desc": "Vehicle diagnostics compressed for the comm link."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/diagnostics/decompressed_diagnostics",
+     "type": "diagnostic_msgs/DiagnosticArray",
+     "rate": "0.64",
+     "rate_hz": 0.635,
+     "total": 176364,
+     "desc": "The same diagnostics re-expanded on the receiving side."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor/report",
+     "type": "lib_supervisor/SupervisorReport",
+     "rate": "0.39",
+     "rate_hz": 0.392,
+     "total": 109036,
+     "desc": "Master safety-supervisor verdict with the list of currently active faults/checks. The first place to look when asking \"was anything wrong?\"."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor_database/cc/history_entries",
+     "type": "lib_supervisor/HistoryEntry",
+     "rate": "<0.01",
+     "rate_hz": 0.009,
+     "total": 2386,
+     "desc": "Supervisor event-history records synchronised to the control centre."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor/description",
+     "type": "lib_supervisor/SupervisorDescription",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 29,
+     "desc": "Catalogue of everything the safety supervisor monitors (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor/distress_active",
+     "type": "std_msgs/Bool",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Distress state flag. No traffic in these logs (never triggered)."
+    },
+    {
+     "topic": "/drix_8/cortix/safety/supervisor/manual_distress",
+     "type": "std_msgs/Bool",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Operator-raised distress flag. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "Situational awareness (sense)",
+   "prefix": "/drix_8/cortix/sense/",
+   "intro": "Perception, costmap, local planning, AIS, radar and lidar products.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/common/sensor_state",
+     "type": "mdt_msgs/Sensor",
+     "rate": "3.24",
+     "rate_hz": 3.239,
+     "total": 900076,
+     "desc": "Per-sensor state/health event stream (~3 Hz) covering the perception sensor suite."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/planning/local_planner_status",
+     "type": "mdt_msgs/LocalPlannerState",
+     "rate": "1.58",
+     "rate_hz": 1.576,
+     "total": 438090,
+     "desc": "Reactive local-planner state at ~1.6 Hz (mode, activity)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/costmap/costmap_raytracer/status",
+     "type": "std_msgs/Bool",
+     "rate": "0.64",
+     "rate_hz": 0.638,
+     "total": 177240,
+     "desc": "Costmap raytracer alive/OK flag."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/radar/short_radar/cc/bandwidth_status",
+     "type": "lib_bandwidth_consumer/BandwidthConsumerStatus",
+     "rate": "0.64",
+     "rate_hz": 0.638,
+     "total": 177206,
+     "desc": "Bandwidth budget/usage of the short-range radar feed."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/radar/long_radar/cc/bandwidth_status",
+     "type": "lib_bandwidth_consumer/BandwidthConsumerStatus",
+     "rate": "0.64",
+     "rate_hz": 0.637,
+     "total": 177122,
+     "desc": "Bandwidth budget/usage of the long-range radar feed."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/lidar/cc/bandwidth_status",
+     "type": "lib_bandwidth_consumer/BandwidthConsumerStatus",
+     "rate": "0.39",
+     "rate_hz": 0.387,
+     "total": 107555,
+     "desc": "Bandwidth budget/usage of the lidar feed toward the control centre."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/planning/local_planner_collisions",
+     "type": "mdt_msgs/Collisions",
+     "rate": "0.13",
+     "rate_hz": 0.131,
+     "total": 30546,
+     "desc": "Predicted conflicts/collisions the local planner is reasoning about \u2014 ~30k messages here means genuine avoidance activity in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/radar/long_radar/cc/radar_overlay",
+     "type": "robopec_msgs/GeoCompressedImage",
+     "rate": "0.06",
+     "rate_hz": 0.06,
+     "total": 13980,
+     "desc": "Georeferenced long-range radar overlay images for the chart display (~every 17 s)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/radar/short_radar/cc/radar_overlay",
+     "type": "robopec_msgs/GeoCompressedImage",
+     "rate": "0.06",
+     "rate_hz": 0.06,
+     "total": 14017,
+     "desc": "Georeferenced short-range radar overlay images for the chart display."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/visualization/lidar/cc/overlay_image",
+     "type": "robopec_msgs/GeoCompressedImage",
+     "rate": "<0.01",
+     "rate_hz": 0.001,
+     "total": 336,
+     "desc": "Georeferenced lidar overlay snapshots for the chart display."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/common/disabled_sensors",
+     "type": "mdt_msgs/DisabledSensorList",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "List of sensors deliberately disabled by the operator. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/costmap/costmap_raytracer/contours",
+     "type": "mdt_msgs/LocalCartesianPolygons",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Obstacle contour polygons from the costmap raytracer. No traffic on the recorded side."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/costmap/exclusion_zones",
+     "type": "mdt_msgs/GeoZones",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 29,
+     "desc": "Operator-defined keep-out zones feeding the costmap (latched per session)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/costmap/geo_points",
+     "type": "mdt_msgs/AddedGeoPoints",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 29,
+     "desc": "Operator-added geographic points/marks feeding the costmap (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/costmap/inclusion_zones",
+     "type": "mdt_msgs/GeoZones",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 29,
+     "desc": "Operator-defined keep-in (operating area) zones (latched per session)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/record/record_info_options",
+     "type": "p_cortix_logs_recorders/RecordInfoOptions",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 26,
+     "desc": "Recording metadata options offered for log annotation (latched)."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/ros_interface/record/set_weather_infos",
+     "type": "p_cortix_logs_recorders/WeatherInfos",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 1,
+     "desc": "Operator-entered weather annotation for the log record."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/ais_operational_mode",
+     "type": "cortix_msgs/AisOperationalMode",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "AIS transponder operating mode. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/sensors/ais_voyage_data",
+     "type": "cortix_msgs/VoyageData",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "AIS voyage configuration (destination, draught...). No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/sense/tools/circular_rosbag/infos",
+     "type": "p_cortix_logs_recorders/RecordInfos",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 1,
+     "desc": "Status of the onboard circular rosbag recorder."
+    }
+   ]
+  },
+  {
+   "title": "Video snapshots",
+   "prefix": "/drix_8/cortix/videostreams/screenshots/",
+   "intro": "Still frames logged periodically from each onboard video stream.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/rafal_back_left/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "0.01",
+     "rate_hz": 0.013,
+     "total": 3709,
+     "desc": "Periodic still frame from the aft-port hull camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/rafal_back_right/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "0.01",
+     "rate_hz": 0.013,
+     "total": 3707,
+     "desc": "Periodic still frame from the aft-starboard hull camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/rafal_front_left/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "0.01",
+     "rate_hz": 0.013,
+     "total": 3689,
+     "desc": "Periodic still frame from the forward-port hull camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/rafal_front_right/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "0.01",
+     "rate_hz": 0.013,
+     "total": 3689,
+     "desc": "Periodic still frame from the forward-starboard hull camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/rgb_cam/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0.007,
+     "total": 1818,
+     "desc": "Periodic still frame from the main RGB camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/elec/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 2,
+     "desc": "Periodic still frame from the electronics-compartment camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/engine/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 2,
+     "desc": "Periodic still frame from the engine-compartment camera, logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/ir_cam/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Periodic still frame from the fixed infrared camera, logged by the screenshot manager. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/mast_ptz_ir/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 1,
+     "desc": "Periodic still frame from the mast pan-tilt-zoom camera (infrared), logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/mast_ptz_vis/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 1,
+     "desc": "Periodic still frame from the mast pan-tilt-zoom camera (visible), logged by the screenshot manager."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/survey_pc/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Periodic still frame from the survey PC screen capture, logged by the screenshot manager. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/underwater/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Periodic still frame from the underwater camera, logged by the screenshot manager. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/videostreams/screenshots/winch/image_log",
+     "type": "p_screenshot_manager/Screenshot",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 5,
+     "desc": "Periodic still frame from the winch camera, logged by the screenshot manager."
+    }
+   ]
+  },
+  {
+   "title": "Navigation & launcher",
+   "prefix": null,
+   "intro": "INS/GNSS support topics, mothership feeds and the launcher (davit) unit.",
+   "rows": [
+    {
+     "topic": "/drix_8/cortix/navigation/jamming_data",
+     "type": "d_tualaj/AntiJammingDataArray",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "GNSS anti-jamming detections (d_tualaj). No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/cortix/navigation/mothership/gps",
+     "type": "mdt_msgs/Gps",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Mothership position as received aboard the vehicle. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/launchers_manager/list",
+     "type": "drix_msgs/LauncherDescriptionArray",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Vehicle-side launcher-manager process list. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/launchers_manager/simplified_gps_diags",
+     "type": "std_msgs/String",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Condensed GPS diagnostics string from the vehicle launcher manager. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/launchers_manager/simplified_plc_diags",
+     "type": "std_msgs/String",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Condensed PLC diagnostics string. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/launchers_manager/simplified_quadrans_diags",
+     "type": "std_msgs/String",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Condensed Quadrans (FOG compass) diagnostics string. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/orientation",
+     "type": "geometry_msgs/QuaternionStamped",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Orientation of the launcher unit. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/raw_gps",
+     "type": "mdt_msgs/Gps",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "GPS feed from the launcher (davit) unit. No traffic in these logs."
+    },
+    {
+     "topic": "/drix_8/launcher/status",
+     "type": "cortix_msgs/LauncherControllerStatus",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Launcher controller status. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "Vehicle hardware & management",
+   "prefix": null,
+   "intro": "Trim, licensing and vehicle-manager topics.",
+   "rows": [
+    {
+     "topic": "/drix_8/hardware/trimmer/status",
+     "type": "drix_msgs/TrimmerStatus",
+     "rate": "0.12",
+     "rate_hz": 0.116,
+     "total": 32301,
+     "desc": "Trim-tab (trimmer) actuator status."
+    },
+    {
+     "topic": "/drix_8/hardware/drix_manager/active_licenses",
+     "type": "cortix_msgs/Licenses",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 27,
+     "desc": "Licensed Cortix feature set active on the vehicle (latched)."
+    }
+   ]
+  },
+  {
+   "title": "Control-centre nodes",
+   "prefix": "/cortix/",
+   "intro": "Nodes running on the control-centre side of the bridge: fleet comm masters, control-centre Iridium terminus, rosbridge servers for the HMI, and box health (NTP, ping).",
+   "rows": [
+    {
+     "topic": "/cortix/communications/hmi_heartbeat",
+     "type": "std_msgs/Bool",
+     "rate": "3.09",
+     "rate_hz": 3.088,
+     "total": 858275,
+     "desc": "Operator HMI alive-tick received by the connectivity box (~3 Hz)."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_cpp/service_call_events",
+     "type": "rosbridge_cpp_msgs/ServiceCallEvent",
+     "rate": "2.13",
+     "rate_hz": 2.13,
+     "total": 591797,
+     "desc": "Audit stream of every ROS service call made through the main rosbridge (~2 Hz) \u2014 a record of operator HMI actions."
+    },
+    {
+     "topic": "/cortix/communications/bridge_comm_masters/network_info",
+     "type": "bridge_comm_msgs/BridgeCommFleetStatus",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273159,
+     "desc": "Fleet communication-bridge master status at ~1 Hz: per-vehicle link visibility as seen from the control-centre side of the bridge."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics_cleaner/diagnostics_out",
+     "type": "diagnostic_msgs/DiagnosticArray",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273122,
+     "desc": "Diagnostics stream with stale/expired entries removed, republished at ~1 Hz."
+    },
+    {
+     "topic": "/cortix/communications/iridium/d_iridium/iridium_direct_ip_status",
+     "type": "cortix_msgs/IridiumDirectIPStatus",
+     "rate": "0.20",
+     "rate_hz": 0.197,
+     "total": 54717,
+     "desc": "Iridium DirectIP server session status (the ground-side path Iridium messages arrive through)."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_cpp/client_count",
+     "type": "std_msgs/Int32",
+     "rate": "0.12",
+     "rate_hz": 0.118,
+     "total": 32727,
+     "desc": "Number of WebSocket clients on the main rosbridge server (HMI connections)."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_cpp/connected_clients",
+     "type": "rosbridge_cpp_msgs/WebSocketConnectedClients",
+     "rate": "0.12",
+     "rate_hz": 0.118,
+     "total": 32727,
+     "desc": "Identity list of WebSocket clients on the main rosbridge server."
+    },
+    {
+     "topic": "/cortix/communications/iridium/iridium_events",
+     "type": "cortix_msgs/IridiumEvents",
+     "rate": "0.10",
+     "rate_hz": 0.099,
+     "total": 27479,
+     "desc": "Iridium link event stream on the control-centre side (session open/close, failures)."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_api/client_count",
+     "type": "std_msgs/Int32",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27322,
+     "desc": "Number of WebSocket clients on the API rosbridge server."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_api/connected_clients",
+     "type": "rosbridge_cpp_msgs/WebSocketConnectedClients",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27322,
+     "desc": "Identity list of WebSocket clients connected to the API rosbridge server."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics/ntp_sync_diagnostics_chrony/sources",
+     "type": "p_ntp_sync_diagnostics/ChronySourceInfoArray",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27321,
+     "desc": "Chrony NTP source list with reachability and offsets \u2014 clock-sync health of the box."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics/ntp_sync_diagnostics_chrony/sourcestats",
+     "type": "p_ntp_sync_diagnostics/ChronySourceStatsArray",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27321,
+     "desc": "Per-NTP-source statistics (jitter, drift) from chrony."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics/ntp_sync_diagnostics_chrony/time_synced",
+     "type": "std_msgs/Bool",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27322,
+     "desc": "Boolean: box clock currently NTP-synchronised."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics/ntp_sync_diagnostics_chrony/tracking",
+     "type": "p_ntp_sync_diagnostics/ChronyTracking",
+     "rate": "0.10",
+     "rate_hz": 0.098,
+     "total": 27322,
+     "desc": "Chrony tracking summary: reference, stratum, offset, skew."
+    },
+    {
+     "topic": "/cortix/communications/d_iridium/msg_status",
+     "type": "cortix_msgs/IridiumMsgStatus",
+     "rate": "<0.01",
+     "rate_hz": 0.001,
+     "total": 161,
+     "desc": "Iridium SBD message send/receive accounting from the control-centre modem driver."
+    },
+    {
+     "topic": "/cortix/communications/cortix_software_version",
+     "type": "std_msgs/String",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 6,
+     "desc": "Cortix software version string for the control-centre stack (latched)."
+    },
+    {
+     "topic": "/cortix/communications/d_iridium/rec_iridium_data",
+     "type": "cortix_msgs/IridiumData",
+     "rate": "<0.01",
+     "rate_hz": 0,
+     "total": 121,
+     "desc": "Raw received Iridium SBD payloads (vehicle snapshots arriving over satellite)."
+    },
+    {
+     "topic": "/cortix/communications/rosbridge_server_api/service_call_events",
+     "type": "rosbridge_cpp_msgs/ServiceCallEvent",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Audit stream of ROS service calls made through the API rosbridge. No traffic in these logs."
+    },
+    {
+     "topic": "/cortix/navigation/mothership/gps",
+     "type": "mdt_msgs/Gps",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Mothership GPS feed on the control-centre side. No traffic in these logs."
+    },
+    {
+     "topic": "/cortix/safety/diagnostics/ping_diagnostics/host_array",
+     "type": "cortix_msgs/HostArray",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Ping reachability results for monitored network hosts. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "System, diagnostics & logging",
+   "prefix": null,
+   "intro": "ROS-level health, logs and process management for the whole recorded graph.",
+   "rows": [
+    {
+     "topic": "/diagnostics",
+     "type": "diagnostic_msgs/DiagnosticArray",
+     "rate": "21.6",
+     "rate_hz": 21.624,
+     "total": 6009307,
+     "desc": "Raw ROS 2 diagnostics firehose from every node and driver; highest-volume topic in the recording. Aggregated downstream into /diagnostics_agg."
+    },
+    {
+     "topic": "/journal",
+     "type": "rcl_interfaces/Log",
+     "rate": "14.4",
+     "rate_hz": 14.354,
+     "total": 3988991,
+     "desc": "ROS 2 log stream (rosout equivalent) from all nodes at ~14 Hz. The primary event-forensics topic: mode changes, faults and driver messages appear here with timestamps."
+    },
+    {
+     "topic": "/diagnostics_agg",
+     "type": "diagnostic_msgs/DiagnosticArray",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273157,
+     "desc": "Aggregated diagnostics tree (diagnostic_aggregator output) at ~1 Hz \u2014 the organised view of /diagnostics."
+    },
+    {
+     "topic": "/diagnostics_toplevel_state",
+     "type": "diagnostic_msgs/DiagnosticStatus",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273158,
+     "desc": "Single roll-up status (OK / WARN / ERROR) of the whole aggregated diagnostics tree."
+    },
+    {
+     "topic": "/launcher/launchers_manager/list",
+     "type": "drix_msgs/LauncherDescriptionArray",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273170,
+     "desc": "Catalogue of launchable process groups known to the launcher manager and their current run states."
+    },
+    {
+     "topic": "/rosmon_robobox/state",
+     "type": "rosmon_msgs/State",
+     "rate": "0.98",
+     "rate_hz": 0.983,
+     "total": 273186,
+     "desc": "rosmon process-monitor state for the robobox launch group: per-node running / crashed / restart counts."
+    },
+    {
+     "topic": "/launcher/DDS12/manual_action_ping",
+     "type": "std_msgs/Empty",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Manual keep-alive ping slot for the DDS12 launcher entry. No traffic in these logs."
+    },
+    {
+     "topic": "/launcher/DDS13/manual_action_ping",
+     "type": "std_msgs/Empty",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Manual keep-alive ping slot for the DDS13 launcher entry. No traffic in these logs."
+    }
+   ]
+  },
+  {
+   "title": "Fleet & mothership placeholders",
+   "prefix": null,
+   "intro": "Topic slots for other hulls and the mothership on the shared fleet bridge \u2014 all silent here.",
+   "rows": [
+    {
+     "topic": "/drix_21/cortix/plc/keel/keep_alive",
+     "type": "std_msgs/Empty",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 21. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_21/cortix/plc/winch/down_manual",
+     "type": "std_msgs/Float32",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 21. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_21/cortix/plc/winch/up_manual",
+     "type": "std_msgs/Float32",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 21. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_21/cortix/sense/ros_interface/common/disabled_sensors",
+     "type": "mdt_msgs/DisabledSensorList",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 21. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_22/cortix/plc/keel/keep_alive",
+     "type": "std_msgs/Empty",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 22. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_22/cortix/plc/winch/manual_command",
+     "type": "cortix_msgs/WinchCommand",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 22. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_22/cortix/sense/ros_interface/common/disabled_sensors",
+     "type": "mdt_msgs/DisabledSensorList",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 22. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_22/cortix/sense/ros_interface/record/set_weather_infos",
+     "type": "p_cortix_logs_recorders/WeatherInfos",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 22. Defined but silent in these logs."
+    },
+    {
+     "topic": "/drix_22/cortix/sense/tools/circular_rosbag/infos",
+     "type": "p_cortix_logs_recorders/RecordInfos",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Fleet-bridge slot for DriX 22. Defined but silent in these logs."
+    },
+    {
+     "topic": "/mothership/size",
+     "type": "mdt_msgs/ShipSize",
+     "rate": "\u2014",
+     "rate_hz": 0,
+     "total": 0,
+     "desc": "Mothership principal dimensions broadcast (for relative-position geometry). No traffic in these logs."
+    }
+   ]
+  }
+ ],
+ "params_matrix": [
+  {
+   "node": "/cortix/communications/bridge_comm_masters",
+   "hint": "fleet comm-bridge master",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 3
+  },
+  {
+   "node": "/cortix/communications/garmin_cortex_recordings_receiver",
+   "hint": "VHF-recordings receiver",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 12
+  },
+  {
+   "node": "/cortix/communications/iridium/iridium_bridge_clients",
+   "hint": "Iridium bridge clients",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 0
+  },
+  {
+   "node": "/cortix/communications/p_nmea_drixpos_sender",
+   "hint": "NMEA DriX-position sender (feeds ship systems, e.g. ECDIS)",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 11
+  },
+  {
+   "node": "/drix_8/bridge_comm_link",
+   "hint": "bridge comm link",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 2
+  },
+  {
+   "node": "/drix_8/cortix/communications/d_radio_modem",
+   "hint": "UHF radio-modem driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/communications/d_wifi_modem",
+   "hint": "Wi-Fi broadband modem driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 28
+  },
+  {
+   "node": "/drix_8/cortix/communications/d_wifi_modem_roaming",
+   "hint": "Wi-Fi modem roaming controller",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/communications/garmin_cortex",
+   "hint": "Garmin Cortex VHF driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 40
+  },
+  {
+   "node": "/drix_8/cortix/mission/guidance_manager",
+   "hint": "guidance manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 189
+  },
+  {
+   "node": "/drix_8/cortix/navigation/d_phins",
+   "hint": "iXblue PHINS INS driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 29
+  },
+  {
+   "node": "/drix_8/cortix/payloads/cameras_manager",
+   "hint": "camera manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 730
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_flipix",
+   "hint": "Flipix retractable camera driver (+ installation pose entries)",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_flipix/installation_alt",
+   "hint": "Flipix installation altitude",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_flipix/installation_depth",
+   "hint": "Flipix installation depth",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_flipix/installation_pitch",
+   "hint": "Flipix installation pitch",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_flipix/installation_roll",
+   "hint": "Flipix installation roll",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_gaps",
+   "hint": "GAPS USBL positioning driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_navipac",
+   "hint": "EIVA NaviPac interface",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_qinsy",
+   "hint": "QPS QINSy survey-software interface",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/d_sams",
+   "hint": "SAMS interface",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/echoes_controller",
+   "hint": "ECHOES sub-bottom profiler controller",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/p_fls_grpc",
+   "hint": "forward-looking-sonar gRPC bridge",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/payloads_manager",
+   "hint": "payloads manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 28
+  },
+  {
+   "node": "/drix_8/cortix/payloads/sonar/d_mbes_norbit",
+   "hint": "Norbit multibeam driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/payloads/sonar/kongsberg_em_controller",
+   "hint": "Kongsberg EM-series (EM2040) sonar controller",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 556
+  },
+  {
+   "node": "/drix_8/cortix/payloads/sonar/kongsberg_em_controller/installation",
+   "hint": "sonar installation geometry",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 27
+  },
+  {
+   "node": "/drix_8/cortix/payloads/sonar/sonar_processor",
+   "hint": "sonar processor (incl. antigrounding look-ahead)",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 34
+  },
+  {
+   "node": "/drix_8/cortix/payloads/sonar/sonar_processor/antigrounding",
+   "hint": "sonar processor (incl. antigrounding look-ahead)",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 34
+  },
+  {
+   "node": "/drix_8/cortix/plc/d_drix/offsets",
+   "hint": "installation offsets",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 100
+  },
+  {
+   "node": "/drix_8/cortix/plc/winch",
+   "hint": "winch controller",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 46
+  },
+  {
+   "node": "/drix_8/cortix/safety/antigrounding_alert_fault",
+   "hint": "antigrounding alert fault monitor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/cortix/safety/antigrounding_warning_fault",
+   "hint": "antigrounding warning fault monitor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/cortix/safety/captain_timeout_supervisor",
+   "hint": "captain-timeout supervisor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/cortix/safety/iridium_comm_supervisor",
+   "hint": "Iridium-comms-loss supervisor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/cortix/safety/rc_comm_supervisor",
+   "hint": "RC-link-loss supervisor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 27
+  },
+  {
+   "node": "/drix_8/cortix/sense/planning/local_planner/planning_strategy",
+   "hint": "local-planner strategy",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 27
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/ais/ais_parser",
+   "hint": "AIS sentence parser",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 28
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/ais/ais_receiver",
+   "hint": "AIS receiver driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 29
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/ais/ais_sender",
+   "hint": "AIS transmit driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/costmap/enc_processor",
+   "hint": "ENC chart-to-costmap processor",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/radar/long_radar",
+   "hint": "long-range radar driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 79
+  },
+  {
+   "node": "/drix_8/cortix/sense/sensors/radar/short_radar",
+   "hint": "short-range radar driver",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 86
+  },
+  {
+   "node": "/drix_8/cortix/sense/tools/environment_presets_manager",
+   "hint": "environment presets manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 27
+  },
+  {
+   "node": "/drix_8/cortix/sense/tools/p_nav_params_manager",
+   "hint": "navigation parameter-set manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 95
+  },
+  {
+   "node": "/drix_8/cortix/sense/tools/sea_condition_presets_manager",
+   "hint": "sea-condition presets manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/cortix/sense/tracking/detection_filter",
+   "hint": "track detection filter",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 50
+  },
+  {
+   "node": "/drix_8/cortix/sense/tracking/tracker",
+   "hint": "target tracker",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 48
+  },
+  {
+   "node": "/drix_8/hardware/drix_manager",
+   "hint": "DriX manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 27
+  },
+  {
+   "node": "/drix_8/hardware/mdt_manager",
+   "hint": "MDT manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/hardware/pwd_manager",
+   "hint": "password manager",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/launcher/p_relative_lars_pos",
+   "hint": "relative LARS position estimator",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_bow",
+   "hint": "static transform: bow reference",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_cam_ir",
+   "hint": "static transform: IR camera",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 0
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_gps_antenna",
+   "hint": "static transform: GPS antenna",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_keel",
+   "hint": "static transform: keel",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_lidar",
+   "hint": "static transform: lidar",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/drix_8/lever_arms/static_tf_radar",
+   "hint": "static transform: radar",
+   "values": true,
+   "desc": false,
+   "file": false,
+   "total": 26
+  },
+  {
+   "node": "/hardware/fuel_cons_manager/drix_8",
+   "hint": "fuel-consumption manager",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 0
+  },
+  {
+   "node": "/hardware/robobox_manager",
+   "hint": "robobox manager",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 6
+  },
+  {
+   "node": "/hardware/robobox_manager/gps_manager",
+   "hint": "robobox GPS manager",
+   "values": true,
+   "desc": true,
+   "file": true,
+   "total": 6
+  }
+ ]
+}

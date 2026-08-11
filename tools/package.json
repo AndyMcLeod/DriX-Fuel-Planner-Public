@@ -1,0 +1,11 @@
+{
+  "name": "drix-fuel-tools",
+  "private": true,
+  "description": "Document builders for the DriX fuel planner (not part of the stdlib-only planner)",
+  "scripts": {
+    "topic-doc": "node build_topic_doc.js"
+  },
+  "dependencies": {
+    "docx": "^9.7.1"
+  }
+}

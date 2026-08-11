@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+tools/rosbags/
+tools/node_modules/
+tools/package-lock.json
+D8_2040/
+*.mcap

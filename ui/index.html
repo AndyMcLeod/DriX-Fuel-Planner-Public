@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DriX mission fuel planner</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">⛽</span>
+    <div>
+      <h1>DriX mission fuel planner</h1>
+      <p class="sub">Fuel, endurance and reserve margin for a transit&ndash;survey&ndash;transit mission</p>
+    </div>
+  </div>
+  <div class="verdict" id="verdict" hidden>
+    <span class="verdict-label" id="verdictLabel">&mdash;</span>
+    <span class="verdict-detail" id="verdictDetail"></span>
+  </div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------------ inputs -->
+  <form id="planForm" class="panel inputs" autocomplete="off">
+
+    <section class="card">
+      <h2>Environment</h2>
+      <div class="grid2">
+        <label class="field">
+          <span>Sea state (WMO)</span>
+          <select id="seaState" name="seaState"></select>
+        </label>
+        <label class="field">
+          <span>RPM premium</span>
+          <input type="text" id="seaPremium" readonly tabindex="-1" class="readout">
+        </label>
+        <label class="field">
+          <span>Wind speed <em>kt</em></span>
+          <input type="number" id="windSpeed" min="0" max="80" step="0.5" value="12">
+        </label>
+        <label class="field">
+          <span>Wind from <em>&deg;true</em></span>
+          <input type="number" id="windFrom" min="0" max="360" step="1" value="270">
+        </label>
+      </div>
+      <p class="note" id="seaNote"></p>
+    </section>
+
+    <section class="card">
+      <h2>Vessel</h2>
+      <div class="grid2">
+        <label class="field span2">
+          <span>Gondola</span>
+          <select id="gondola"></select>
+        </label>
+        <label class="field span2">
+          <span>Tank capacity</span>
+          <select id="capacityPreset"></select>
+        </label>
+        <label class="field">
+          <span>Capacity <em>L</em></span>
+          <input type="number" id="capacity" min="1" max="1000" step="0.1" value="250">
+        </label>
+        <label class="field">
+          <span>Start level <em>%</em></span>
+          <input type="number" id="startLevel" min="1" max="100" step="1" value="100">
+        </label>
+        <label class="field">
+          <span>Return reserve <em>%</em></span>
+          <input type="number" id="reserve" min="0" max="90" step="1" value="25">
+        </label>
+        <div class="field">
+          <span>Usable</span>
+          <output class="readout" id="usableOut">&mdash;</output>
+        </div>
+      </div>
+      <p class="note" id="gondolaNote"></p>
+    </section>
+
+    <section class="card">
+      <h2>Mission clock</h2>
+      <div class="grid2">
+        <label class="field span2">
+          <span>Start time <em>optional</em></span>
+          <input type="datetime-local" id="startTime">
+        </label>
+        <label class="field">
+          <span>Home marks <em>km</em></span>
+          <input type="text" id="homeMarkKm" value="13, 26"
+                 inputmode="decimal" placeholder="13, 26">
+        </label>
+        <div class="field">
+          <span>Back alongside</span>
+          <output class="readout" id="finishOut">&mdash;</output>
+        </div>
+      </div>
+      <p class="note">Leave the start time blank for elapsed hours only. Each
+        radius is timed twice &mdash; outbound on the first leg and inbound on
+        the last &mdash; measured along the planned track. Comma-separated;
+        clearing the box restores the defaults.</p>
+    </section>
+
+    <section class="card">
+      <h2>Mission legs</h2>
+
+      <div class="leg">
+        <h3>Transit out</h3>
+        <div class="grid3">
+          <label class="field"><span>Range <em>NM</em></span>
+            <input type="number" id="outRange" min="0" step="0.1" value="25"></label>
+          <label class="field"><span>Speed <em>kt</em></span>
+            <input type="number" id="outSpeed" min="0.1" step="0.1" value="7"></label>
+          <label class="field"><span>Course <em>&deg;</em></span>
+            <input type="number" id="outCourse" min="0" max="360" step="1" value="90"></label>
+        </div>
+      </div>
+
+      <div class="leg">
+        <h3>Survey</h3>
+        <div class="grid3">
+          <label class="field"><span>Lines</span>
+            <input type="number" id="surLines" min="1" step="1" value="12"></label>
+          <label class="field"><span>Line length <em>NM</em></span>
+            <input type="number" id="surRange" min="0" step="0.1" value="10"></label>
+          <label class="field"><span>Line bearing <em>&deg;</em></span>
+            <input type="number" id="surCourse" min="0" max="360" step="1" value="0"></label>
+          <label class="field"><span>Speed <em>kt</em></span>
+            <input type="number" id="surSpeed" min="0.1" step="0.1" value="8"></label>
+          <div class="field"><span>Survey distance</span>
+            <output class="readout" id="surTotal">&mdash;</output></div>
+        </div>
+        <p class="note">Alternate lines run the reciprocal bearing. Fuel is summed
+          line by line, not from an averaged premium: the line into the weather
+          costs more than the reciprocal saves, because fuel is convex in RPM.
+          An <strong>odd</strong> line count cannot balance at all &mdash; one
+          direction gets an extra line.</p>
+      </div>
+
+      <div class="leg">
+        <h3>Transit home</h3>
+        <div class="grid3">
+          <label class="field"><span>Range <em>NM</em></span>
+            <input type="number" id="homeRange" min="0" step="0.1" value="25"></label>
+          <label class="field"><span>Speed <em>kt</em></span>
+            <input type="number" id="homeSpeed" min="0.1" step="0.1" value="7"></label>
+          <label class="field"><span>Course <em>&deg;</em></span>
+            <input type="number" id="homeCourse" min="0" max="360" step="1" value="270"></label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="primary">Plan mission</button>
+        <button type="button" id="maxBtn">Max survey for the reserve</button>
+      </div>
+      <p class="note" id="maxOut"></p>
+    </section>
+
+    <section class="card compass-card">
+      <h2>Geometry</h2>
+      <svg id="rose" viewBox="0 0 200 200" role="img" aria-label="Wind and leg courses"></svg>
+      <p class="note">Blue arrow is the wind (pointing the way it blows). Legs are drawn on their courses; green runs with the wind, red into it.</p>
+    </section>
+  </form>
+
+  <!-- ----------------------------------------------------------- results -->
+  <div class="panel results" id="results" aria-live="polite">
+    <div class="placeholder" id="placeholder">
+      <p>Set up a mission and press <strong>Plan mission</strong>.</p>
+    </div>
+
+    <div id="output" hidden>
+      <section class="card">
+        <h2>Summary</h2>
+        <div class="tiles" id="tiles"></div>
+      </section>
+
+      <section class="card" id="warnCard" hidden>
+        <h2>Warnings</h2>
+        <ul class="warnings" id="warnings"></ul>
+      </section>
+
+      <section class="card">
+        <h2>By leg</h2>
+        <div class="tablewrap">
+          <table id="legTable">
+            <thead><tr>
+              <th>Leg</th><th>NM</th><th>kt</th><th>RPM</th><th>Premium</th>
+              <th>L/h</th><th>Hours</th><th>Ends</th><th>Litres</th><th>NM/L</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="note" id="legNotes"></p>
+      </section>
+
+      <section class="card" id="marksCard" hidden>
+        <h2>Mission marks</h2>
+        <div class="tablewrap">
+          <table id="marksTable">
+            <thead><tr>
+              <th>Mark</th><th>On leg</th><th>Elapsed</th><th>Time</th>
+              <th>Burned</th><th>Gauge</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="note">Survey arrival is the start of the first survey leg and
+          departure the end of the last, so a reposition between patches sits
+          inside time on task rather than splitting it.
+          Distance-from-home marks are measured along the planned track: run
+          made good on the first leg, distance still to run on the last. The
+          planner has no position model, so those are the only two honest
+          readings of &ldquo;distance from home&rdquo;.</p>
+      </section>
+
+      <section class="card">
+        <h2>If the sea-state premium is wrong</h2>
+        <p class="note">The premium is an assumption, not a fitted value &mdash; so this band matters
+          more than the single number above.</p>
+        <div class="tablewrap">
+          <table id="sensTable">
+            <thead><tr>
+              <th>Premium shift</th><th>Total fuel</th><th>On return</th>
+              <th>Margin over reserve</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>The tank is 250 L, and the gauge is treated as non-linear</h2>
+        <p class="note">The engineering drawings settle the physical volume at
+          250&nbsp;L on every hull, while the measured band says 2.06&nbsp;L per
+          indicated point &mdash; which only fit together if the gauge reads
+          differently in bands nobody has measured. The planner adopts that
+          reading (<em>A</em>): the 72&ndash;86% band stays at the measured rate
+          and the other 86 points carry the balance, at about 2.57.
+          <strong>This is an inference, not a measurement.</strong> On the
+          conservative reading (<em>B</em>) the gauge speaks only for its own
+          ~206&nbsp;L span and mission fuel drops from 211&nbsp;L to 175&nbsp;L.
+          One drawdown to the floor separates them.</p>
+        <p class="note" id="gaugeNote"></p>
+        <div class="tablewrap">
+          <table id="capTable">
+            <thead><tr>
+              <th>Capacity basis</th><th>On return</th><th>Margin over reserve</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>EM2040 curves measured from the Aug 2026 MCAP logs (fuel law valid 1400&ndash;3100 rpm,
+     so 8 kt survey planning is interpolation); EM712 curves from the 2024 trials
+     (1020&ndash;2500 rpm &mdash; 8 kt on that gondola is flagged as extrapolation).
+     The sea-state premium and the wind scaling remain assumptions, not measurements.</p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
