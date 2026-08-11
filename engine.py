@@ -249,11 +249,19 @@ class Environment:
     wmo_sea_state: int = 2
     wind_speed_kt: float = 0.0
     wind_from_deg: float = 0.0          # direction the wind blows FROM
+    # CURRENT USES THE OPPOSITE CONVENTION TO WIND, as at sea: a wind is named
+    # for where it comes FROM, a current for where it SETS TOWARD. Getting
+    # these the same way round is the classic way to plan a mission backwards,
+    # so the field name says which it is and the UI labels it.
+    current_speed_kt: float = 0.0       # drift
+    current_set_deg: float = 0.0        # direction the current flows TOWARD
 
     def validate(self) -> list[str]:
         errs = []
         if self.wind_speed_kt < 0:
             errs.append('wind speed must not be negative')
+        if self.current_speed_kt < 0:
+            errs.append('current speed must not be negative')
         return errs
 
 
@@ -477,6 +485,12 @@ class LegResult:
     # these are the extremes actually flown, which is what the fuel law sees.
     lines: int | None = None
     line_length_nm: float | None = None
+    # Through-water speed actually required, distance-weighted. Equals speed_kt
+    # when there is no current; the spread across a reciprocal pair is what a
+    # current costs that a following one does not give back.
+    stw_kt: float = 0.0
+    stw_min: float = 0.0
+    stw_max: float = 0.0
     rpm_min: float = 0.0
     rpm_max: float = 0.0
     premium_min: float = 0.0
@@ -594,33 +608,55 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     that error, which is what this leg used to make.
     """
     distance = leg.resolved_distance_nm()
+    # Duration follows SOG: the ground still has to be covered. A current moves
+    # the FUEL, never the clock.
     hours = distance / leg.speed_kt if leg.speed_kt > 0 else 0.0
-    rpm_benign = model.rpm_for_speed(leg.speed_kt, gondola)
     sea_p = model.sea_state_premium(env.wmo_sea_state, sea_override)
+    # rpm_benign and stw_kt are resolved per line below and averaged, because a
+    # current is directional: a reciprocal pair does not see the same water.
+    rpm_benign = stw_kt = 0.0
 
     runs = leg.line_plan()
     litres = 0.0
-    w_head = w_rpm = w_prem = 0.0        # distance-weighted means
+    w_head = w_rpm = w_prem = w_stw = w_benign = 0.0   # distance-weighted means
     rpms: list[float] = []
     prems: list[float] = []
+    stws: list[float] = []
     for nm, course in runs:
+        # The current is resolved PER LINE, before any premium: it changes the
+        # through-water speed the hull must make to hold this SOG, which is a
+        # different thing from the empirical premium and enters the chain one
+        # step earlier. Over a reciprocal pair it helps one way and hurts the
+        # other, and the two do not cancel, for the same reason the wind
+        # premium does not: fuel is convex in RPM.
+        stw_i = required_stw_kt(leg.speed_kt, course,
+                                env.current_speed_kt, env.current_set_deg)
+        benign_i = max(0.0, model.rpm_for_speed(stw_i, gondola))
         head_i = model.heading_premium(course, env.wind_from_deg, env.wind_speed_kt)
         prem_i = sea_p + head_i + premium_delta
-        rpm_i = rpm_benign * (1.0 + prem_i)
+        rpm_i = benign_i * (1.0 + prem_i)
         rate_i = model.fuel_rate_lph(rpm_i, gondola)
         litres += rate_i * (nm / leg.speed_kt if leg.speed_kt > 0 else 0.0)
         w_head += head_i * nm
         w_rpm += rpm_i * nm
         w_prem += prem_i * nm
+        w_stw += stw_i * nm
+        w_benign += benign_i * nm
         rpms.append(rpm_i)
         prems.append(prem_i)
+        stws.append(stw_i)
 
     if distance > 0:
         head_p, rpm_req, total_p = w_head / distance, w_rpm / distance, w_prem / distance
+        stw_kt = w_stw / distance
+        rpm_benign = w_benign / distance
     else:
         head_p = model.heading_premium(leg.course_deg, env.wind_from_deg,
                                        env.wind_speed_kt)
         total_p = sea_p + head_p + premium_delta
+        stw_kt = required_stw_kt(leg.speed_kt, leg.course_deg,
+                                 env.current_speed_kt, env.current_set_deg)
+        rpm_benign = max(0.0, model.rpm_for_speed(stw_kt, gondola))
         rpm_req = rpm_benign * (1.0 + total_p)
     # The effective rate, so `litres = rate x hours` still holds for readers.
     rate = litres / hours if hours > 0 else model.fuel_rate_lph(rpm_req, gondola)
@@ -651,6 +687,21 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     if rate <= 0:
         notes.append('Fuel model clamped at zero; the leg is below its valid range.')
 
+    if env.current_speed_kt > 0 and stws:
+        lo, hi = min(stws), max(stws)
+        span = (f'{lo:.2f}–{hi:.2f}' if hi - lo > 0.005 else f'{lo:.2f}')
+        notes.append(
+            f'{env.current_speed_kt:.1f} kt current setting {env.current_set_deg:.0f}°: '
+            f'holding {leg.speed_kt:.1f} kt over the ground needs {span} kt through '
+            f'the water. This is KINEMATIC, not fitted — but the speed law was fitted '
+            f'on SOG in an unrecorded tide and the heading premium already mixes wind, '
+            f'sea and current, so a large current is partly counted twice.')
+        if lo <= 0.05:
+            notes.append(
+                f'The current nearly matches this leg\'s ground speed, so the required '
+                f'through-water speed falls to {lo:.2f} kt — the hull is being carried. '
+                f'The fuel law says nothing at that speed; treat the figure as a floor.')
+
     # -- Loiter, held at the end of the leg ---------------------------------- #
     loiter_h = max(0.0, float(leg.loiter_hours or 0.0))
     loiter_lph, loiter_measured, loiter_rpm = model.loiter_rate_lph(gondola)
@@ -680,10 +731,37 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
         loiter_hours=loiter_h, loiter_litres=loiter_l, loiter_lph=loiter_lph,
         loiter_measured=loiter_measured, total_litres=litres + loiter_l,
         lines=leg.lines, line_length_nm=leg.line_length_nm,
+        stw_kt=stw_kt,
+        stw_min=min(stws) if stws else stw_kt,
+        stw_max=max(stws) if stws else stw_kt,
         rpm_min=min(rpms) if rpms else rpm_req,
         rpm_max=max(rpms) if rpms else rpm_req,
         premium_min=min(prems) if prems else total_p,
         premium_max=max(prems) if prems else total_p)
+
+
+def required_stw_kt(sog_kt: float, course_deg: float,
+                    current_speed_kt: float, current_set_deg: float) -> float:
+    """Speed through the water needed to hold `sog_kt` over the ground.
+
+    Pure kinematics, not a fitted premium: the water velocity a hull must make
+    is the ground velocity minus the current, so
+
+        STW = |Vg - Vc| = sqrt(Vg^2 + Vc^2 - 2*Vg*Vc*cos(set - course))
+
+    A current dead on the nose adds its drift to the required through-water
+    speed; dead astern it subtracts; on the beam the hull must crab, which
+    costs a little either way. Fuel follows STW because that is what the hull
+    pushes against, while the LEG'S DURATION follows SOG because that is what
+    covers the ground — so a current changes the fuel bill without changing
+    the clock.
+    """
+    if current_speed_kt <= 0 or sog_kt <= 0:
+        return max(0.0, sog_kt)
+    d = math.radians(current_set_deg - course_deg)
+    stw_sq = (sog_kt * sog_kt + current_speed_kt * current_speed_kt
+              - 2.0 * sog_kt * current_speed_kt * math.cos(d))
+    return math.sqrt(max(0.0, stw_sq))
 
 
 def _hm(hours: float) -> str:

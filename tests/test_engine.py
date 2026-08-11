@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine import (HOME_MARKS_KM, KM_PER_NM, WAYPOINTS_KM,  # noqa: E402
                     Environment, Leg, Model, Vessel, default_waypoints,
                     load_model, max_survey_length, max_survey_lines, plan,
-                    plan_leg)
+                    plan_leg, required_stw_kt)
 
 # Coefficients as published in the analysis workbook, retyped here on purpose:
 # if model.json drifts from the workbook, these tests break.
@@ -836,6 +836,118 @@ class TestGaugeDenominatedReserve(unittest.TestCase):
         self.assertIsNone(p.gauge_within_reserve)
         self.assertGreater(p.total_litres, 0.0)
         self.assertFalse(any('GAUGE DISAGREES' in w for w in p.warnings))
+
+
+class TestCurrent(unittest.TestCase):
+    """Set and drift. Kinematics, not an empirical premium.
+
+    A current changes the through-water speed the hull must make to hold a
+    given SOG. Fuel follows STW; the clock follows SOG.
+    """
+
+    def setUp(self):
+        self.m = Model()
+        self.legs = [Leg('out', 'transit', 20.0, 8.0, 0.0),
+                     Leg('survey', 'survey', 120.0, 8.0, 90.0),
+                     Leg('home', 'transit', 20.0, 8.0, 180.0)]
+
+    def _v(self):
+        return Vessel(gondola='em2040')
+
+    def _env(self, kt=0.0, set_deg=0.0):
+        return Environment(wmo_sea_state=2, wind_speed_kt=0.0,
+                           current_speed_kt=kt, current_set_deg=set_deg)
+
+    # -- the vector triangle, against arithmetic done outside the engine ---- #
+
+    def test_a_head_current_adds_its_drift_to_the_required_water_speed(self):
+        # Course 000, current setting 180 = straight onto the bow.
+        self.assertAlmostEqual(required_stw_kt(8.0, 0.0, 2.0, 180.0), 10.0, places=12)
+
+    def test_a_following_current_subtracts_it(self):
+        self.assertAlmostEqual(required_stw_kt(8.0, 0.0, 2.0, 0.0), 6.0, places=12)
+
+    def test_a_beam_current_costs_a_little_either_way(self):
+        """Pythagoras: the hull must crab, so STW exceeds SOG whichever beam."""
+        want = math.sqrt(8.0 ** 2 + 2.0 ** 2)
+        for set_deg in (90.0, 270.0):
+            self.assertAlmostEqual(required_stw_kt(8.0, 0.0, 2.0, set_deg),
+                                   want, places=12)
+        self.assertGreater(want, 8.0)
+
+    def test_no_current_is_the_ground_speed_exactly(self):
+        for course in (0.0, 37.0, 180.0, 359.0):
+            self.assertEqual(required_stw_kt(8.0, course, 0.0, 123.0), 8.0)
+
+    # -- what it does to a plan -------------------------------------------- #
+
+    def test_no_current_changes_nothing(self):
+        """Absent means old behaviour, to twelve places."""
+        a = plan(self.legs, Environment(wmo_sea_state=2, wind_speed_kt=0.0),
+                 self._v(), self.m)
+        b = plan(self.legs, self._env(0.0, 250.0), self._v(), self.m)
+        self.assertAlmostEqual(a.total_litres, b.total_litres, places=12)
+        self.assertAlmostEqual(a.total_hours, b.total_hours, places=12)
+
+    def test_a_current_moves_the_fuel_but_never_the_clock(self):
+        """The ground still has to be covered — duration follows SOG."""
+        base = plan(self.legs, self._env(), self._v(), self.m)
+        cur = plan(self.legs, self._env(2.0, 180.0), self._v(), self.m)
+        self.assertAlmostEqual(cur.total_hours, base.total_hours, places=12)
+        self.assertAlmostEqual(cur.total_distance_nm, base.total_distance_nm,
+                               places=12)
+        self.assertNotAlmostEqual(cur.total_litres, base.total_litres, places=3)
+
+    def test_the_leg_reports_the_water_speed_it_actually_needs(self):
+        p = plan(self.legs, self._env(2.0, 180.0), self._v(), self.m)
+        out = p.legs[0]      # course 000, current onto the bow
+        home = p.legs[2]     # course 180, same current now astern
+        self.assertAlmostEqual(out.stw_kt, 10.0, places=9)
+        self.assertAlmostEqual(home.stw_kt, 6.0, places=9)
+        self.assertAlmostEqual(p.legs[0].hours, 20.0 / 8.0, places=12)
+
+    def test_a_head_current_costs_more_than_the_reciprocal_gives_back(self):
+        """The convexity argument, now for current rather than wind. Out and
+        home are equal distances at equal SOG on reciprocal courses, so a
+        current that cancelled would leave the pair unchanged."""
+        base = plan(self.legs, self._env(), self._v(), self.m)
+        cur = plan(self.legs, self._env(2.5, 180.0), self._v(), self.m)
+        b_pair = base.legs[0].litres + base.legs[2].litres
+        c_pair = cur.legs[0].litres + cur.legs[2].litres
+        self.assertGreater(c_pair, b_pair)
+
+    def test_a_survey_sees_the_current_line_by_line(self):
+        """Alternate lines run reciprocal courses, so the current helps one and
+        hinders the next; the spread must show up in the reported STW."""
+        p = plan(self.legs, self._env(2.0, 90.0), self._v(), self.m)
+        survey = p.legs[1]        # lines on 090, alternating to 270
+        self.assertAlmostEqual(survey.stw_min, 6.0, places=9)
+        self.assertAlmostEqual(survey.stw_max, 10.0, places=9)
+        self.assertAlmostEqual(survey.stw_kt, 8.0, places=9)   # mean cancels
+        # ...but the FUEL does not cancel, which is the whole point.
+        base = plan(self.legs, self._env(), self._v(), self.m)
+        self.assertGreater(survey.litres, base.legs[1].litres)
+
+    def test_the_note_admits_the_double_count(self):
+        """The speed law is SOG-based and the heading premium already mixes
+        current in. Saying so is the honest part."""
+        p = plan(self.legs, self._env(2.0, 180.0), self._v(), self.m)
+        note = ' '.join(p.legs[0].notes)
+        self.assertIn('KINEMATIC', note)
+        self.assertIn('counted twice', note)
+
+    def test_a_current_that_carries_the_hull_is_flagged(self):
+        p = plan(self.legs, self._env(8.0, 0.0), self._v(), self.m)
+        note = ' '.join(p.legs[0].notes)
+        self.assertIn('being carried', note)
+
+    def test_a_negative_current_is_refused(self):
+        with self.assertRaises(ValueError) as cm:
+            plan(self.legs, self._env(-1.0, 0.0), self._v(), self.m)
+        self.assertIn('current speed must not be negative', str(cm.exception))
+        # ...and the acceptance case, so the refusal is not vacuous.
+        p = plan(self.legs, self._env(1.0, 0.0), self._v(), self.m)
+        self.assertGreater(p.total_litres, 0.0)
 
 
 class TestLoiter(unittest.TestCase):

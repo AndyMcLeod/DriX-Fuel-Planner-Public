@@ -139,6 +139,37 @@ they are for.
   the default vessel under reading A; 347 NM under B). A solver whose answer the
   planner then flags red would be a bug, and a test asserts it never happens.
 
+## Current — set and drift
+
+`current_speed_kt` and `current_set_deg` sit beside the wind fields.
+**Note the conventions are opposite, as at sea:** a wind is named for where it
+blows **from**, a current for where it **sets toward**.
+
+Unlike the wind premium, this is not fitted — it is kinematics. The water
+velocity the hull must make is the ground velocity minus the current:
+
+```
+STW = |Vg − Vc| = sqrt(Vg² + Vc² − 2·Vg·Vc·cos(set − course))
+```
+
+That through-water speed is what goes through the speed law into RPM. A head
+current adds its drift, a following one subtracts it, and a beam current makes
+the hull crab and costs a little either way. **The clock is untouched** —
+duration follows SOG, because the ground still has to be covered.
+
+It is resolved **per line**, so a reciprocal pair does not cancel: 2 kt setting
+180 against a 000/180 transit pair takes the head leg from 9.6 to 17.2 L and the
+following leg from 9.6 to 5.7 L — 22.9 L against 19.2 L in still water.
+
+**One caveat that matters.** The speed law is SOG-based, fitted in an unrecorded
+tide, and the ±6.91% heading effect already mixes wind, sea and current. So an
+explicit current is **partly counted twice**, and the leg note says so. Use it to
+compare plans and to ask what today's tide costs; do not read it as a calibrated
+tidal model.
+
+A following current can drop the required RPM below the fuel law's fitted floor,
+and the ordinary extrapolation flag fires on it.
+
 ## Loiter — delays you can plan around
 
 Things happen at sea. Every leg takes a **`loiter_hours`**: time held on station

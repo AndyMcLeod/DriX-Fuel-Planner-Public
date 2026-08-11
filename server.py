@@ -114,6 +114,11 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         wmo_sea_state=int(env_in.get('wmo_sea_state', 2)),
         wind_speed_kt=float(env_in.get('wind_speed_kt', 0.0)),
         wind_from_deg=float(env_in.get('wind_from_deg', 0.0)),
+        # Wind is named for where it comes FROM, current for where it SETS
+        # TOWARD. Opposite conventions, deliberately, because that is what the
+        # bridge says.
+        current_speed_kt=float(env_in.get('current_speed_kt', 0.0)),
+        current_set_deg=float(env_in.get('current_set_deg', 0.0)),
     )
     ves_in = body.get('vessel') or {}
     vessel = Vessel(

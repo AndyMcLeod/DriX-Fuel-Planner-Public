@@ -226,6 +226,54 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## Current: set and drift (2026-08-11)
+
+`Environment.current_speed_kt` / `current_set_deg`, beside the wind fields.
+
+**CURRENT USES THE OPPOSITE CONVENTION TO WIND**, as at sea: a wind is named for
+where it comes FROM, a current for where it SETS TOWARD. The field name says
+which, the UI label reads "Current sets toward", and a mutation that reads set
+as a from-direction is killed by four tests. This is the single easiest way to
+plan a mission backwards.
+
+**It is KINEMATICS, not an empirical premium, and it enters one step earlier
+than the wind does.** The water velocity a hull must make is the ground velocity
+minus the current:
+
+    STW = |Vg − Vc| = sqrt(Vg² + Vc² − 2·Vg·Vc·cos(set − course))
+
+so `required_stw_kt()` converts the leg's required SOG into the through-water
+speed, and THAT is what goes through the speed law into RPM. Head current adds
+its drift, following subtracts it, a beam current makes the hull crab and costs
+a little either way.
+
+**A current moves the fuel, never the clock.** Duration follows SOG because the
+ground still has to be covered; fuel follows STW because that is what the hull
+pushes against. A mutation dividing the distance by SOG+drift is killed.
+
+**Resolved per LINE, not per leg.** A reciprocal pair does not see the same
+water, and the two do not cancel — same convexity argument as the wind premium.
+Measured live: with 2 kt setting 180 against a 000/180 transit pair, the head
+leg goes 9.6 → 17.2 L while the following leg goes 9.6 → 5.7 L. The pair costs
+22.9 L against 19.2 L in still water.
+
+**Know what it double-counts.** The speed law is **SOG-based**, fitted in an
+unrecorded tide (README: ±5% tidal), and the ±6.91% heading premium "mixes wind,
+sea and current and cannot be decomposed". So an explicit current is partly
+counted twice, and the leg note says exactly that rather than implying the
+correction is clean. Dropping that sentence is a killed mutation. The honest
+position: this is right for *comparing* plans and for asking "what does today's
+tide cost me", and it is not a calibrated tidal model.
+
+A following current can drop the required RPM **below the fuel law's fitted
+floor** — 1348 rpm in the case above — and the existing extrapolation flag fires
+on it unchanged. That is the rail working, not a defect. A current strong enough
+to carry the hull (required STW near zero) gets its own note.
+
+The compass rose draws the current as a **dashed amber arrow pointing where the
+water goes**, beside the solid wind arrow pointing where the wind goes. Distinct
+colour and dash precisely because the two conventions are opposite.
+
 ## Loiter: delays imposed on a leg (2026-08-11)
 
 `Leg.loiter_hours` — time held on station making no way, charged at the

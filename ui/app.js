@@ -62,7 +62,8 @@ async function boot() {
   });
   ['capacity', 'reserve', 'startLevel', 'surLines', 'surRange'].forEach((id) =>
     $(id).addEventListener('input', refreshDerived));
-  ['windSpeed', 'windFrom', 'outCourse', 'surCourse', 'homeCourse'].forEach((id) =>
+  ['windSpeed', 'windFrom', 'currentSpeed', 'currentSet',
+   'outCourse', 'surCourse', 'homeCourse'].forEach((id) =>
     $(id).addEventListener('input', drawRose));
 
   $('waypointUnit').addEventListener('change', onWaypointUnitChange);
@@ -203,6 +204,9 @@ function buildBody() {
       wmo_sea_state: Number($('seaState').value),
       wind_speed_kt: Number($('windSpeed').value),
       wind_from_deg: Number($('windFrom').value),
+      // Wind FROM, current TOWARD — opposite conventions, as at sea.
+      current_speed_kt: Number($('currentSpeed').value),
+      current_set_deg: Number($('currentSet').value),
     },
     vessel: {
       capacity_l: Number($('capacity').value),
@@ -467,6 +471,8 @@ function drawRose() {
   const cx = 100, cy = 100, R = 74;
   const windFrom = Number($('windFrom').value) || 0;
   const windKt = Number($('windSpeed').value) || 0;
+  const curSet = Number($('currentSet').value) || 0;
+  const curKt = Number($('currentSpeed').value) || 0;
   const legs = [
     { c: Number($('outCourse').value) || 0, label: 'out' },
     { c: Number($('surCourse').value) || 0, label: 'survey' },
@@ -509,9 +515,25 @@ function drawRose() {
             fill="var(--wind)">${windKt} kt</text>`;
   }
 
+  // The current arrow points where the water GOES — the opposite convention to
+  // the wind arrow beside it, which is exactly why it gets its own colour and
+  // its own dashed line rather than sharing the wind's styling.
+  if (curKt > 0) {
+    const [sx, sy] = pt(curSet + 180, R - 2);
+    const [ex, ey] = pt(curSet, R - 34);
+    s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--warn)"
+            stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 3"
+            marker-end="url(#arrowCur)"/>`;
+    s += `<text x="${cx}" y="${cy + (windKt > 0 ? 15 : 4)}" text-anchor="middle"
+            font-size="9" fill="var(--warn)">${curKt} kt set</text>`;
+  }
+
   $('rose').innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
       markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--wind)"/></marker></defs>` + s;
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--wind)"/></marker>
+      <marker id="arrowCur" viewBox="0 0 10 10" refX="8" refY="5"
+      markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--warn)"/></marker></defs>` + s;
 }
 
 boot();
