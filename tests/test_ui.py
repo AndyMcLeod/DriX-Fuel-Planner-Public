@@ -152,5 +152,68 @@ class TestMaxSurveyAutofill(unittest.TestCase):
         self.assertRegex(body, r'haveLength\s*=.*line_length_nm\s*>\s*0')
 
 
+class TestQuickStart(unittest.TestCase):
+    """The help panel renders QUICKSTART.md, so the document IS the help.
+
+    That removes the drift this repo keeps paying for — but it hands the
+    document a constraint: `renderMarkdownSubset()` in app.js understands
+    headings, lists, paragraphs, bold and inline code, and nothing else. An
+    edit reaching for a table, a link or a fenced block would render as literal
+    punctuation in the panel while looking perfect on GitHub, which is exactly
+    the kind of defect nobody notices. So the subset is asserted here.
+    """
+
+    ROOT = Path(__file__).resolve().parent.parent
+    DOC = ROOT / 'QUICKSTART.md'
+
+    def setUp(self):
+        self.text = self.DOC.read_text(encoding='utf-8')
+        self.lines = self.text.split('\n')
+
+    def test_the_document_exists_and_leads_with_a_title(self):
+        self.assertTrue(self.DOC.is_file())
+        self.assertTrue(self.lines[0].startswith('# '), self.lines[0])
+
+    def test_it_uses_only_constructs_the_panel_can_render(self):
+        banned = {
+            '|': 'tables',
+            '```': 'fenced code blocks',
+            '![': 'images',
+            '> ': 'block quotes',
+        }
+        for n, line in enumerate(self.lines, 1):
+            for token, what in banned.items():
+                self.assertNotIn(token, line,
+                                 f'{what} are not rendered by the help panel '
+                                 f'(QUICKSTART.md line {n})')
+        self.assertNotRegex(self.text, r'\[[^\]]+\]\([^)]+\)',
+                            'links are not rendered by the help panel')
+
+    def test_no_bold_or_code_span_spans_a_line_break(self):
+        """The renderer works line by line, so a mark opened on one line and
+        closed on the next renders as literal asterisks. Caught exactly this in
+        the first draft of the document."""
+        for n, line in enumerate(self.lines, 1):
+            self.assertEqual(line.count('**') % 2, 0,
+                             f'unbalanced bold on QUICKSTART.md line {n}: {line!r}')
+            self.assertEqual(line.count('`') % 2, 0,
+                             f'unbalanced code span on QUICKSTART.md line {n}: {line!r}')
+
+    def test_the_server_serves_it_from_the_repo_root(self):
+        """Served, not copied into ui/ — a copy is a second thing to update."""
+        server = (self.ROOT / 'server.py').read_text(encoding='utf-8')
+        self.assertIn("'/quickstart.md'", server)
+        self.assertIn("ROOT / 'QUICKSTART.md'", server)
+
+    def test_the_ui_has_a_help_button_that_fetches_it(self):
+        html = (UI / 'index.html').read_text(encoding='utf-8')
+        js = (UI / 'app.js').read_text(encoding='utf-8')
+        self.assertIn('id="helpBtn"', html)
+        self.assertIn('id="helpPanel"', html)
+        self.assertIn("fetch('/quickstart.md')", js)
+        # No prose duplicated into the markup — that would be the drift again.
+        self.assertNotIn('Quick start</h1>', html)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -229,6 +229,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_file(UI / 'index.html')
         if route.startswith('/static/'):
             return self._serve_file(UI / route[len('/static/'):])
+        # The help panel renders THIS file, so the document an operator reads in
+        # the app and the one in the repo cannot drift apart. Served from the
+        # repo root rather than copied into ui/, for the same reason.
+        if route == '/quickstart.md':
+            path = ROOT / 'QUICKSTART.md'
+            if not path.is_file():
+                return self._error(404, 'quick start not found')
+            return self._send(200, path.read_bytes(), 'text/markdown; charset=utf-8')
         if route == '/api/model':
             return self._json(200, load_model())
         if route == '/api/health':

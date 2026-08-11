@@ -69,6 +69,17 @@ async function boot() {
   $('waypointUnit').addEventListener('change', onWaypointUnitChange);
   wireLoiter();
 
+  $('helpBtn').addEventListener('click', openHelp);
+  $('helpClose').addEventListener('click', closeHelp);
+  // Click-outside and Escape both close it: a modal you can only leave by
+  // finding one small button is a modal that gets left open.
+  $('helpPanel').addEventListener('click', (e) => {
+    if (e.target === $('helpPanel')) closeHelp();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('helpPanel').hidden) closeHelp();
+  });
+
   $('planForm').addEventListener('submit', (e) => { e.preventDefault(); doPlan(); });
   $('maxBtn').addEventListener('click', doMaxSurvey);
 
@@ -472,6 +483,91 @@ function hm(hours) {
   const m = totalMin % 60;
   if (h && m) return `${h} h ${m} min`;
   return h ? `${h} h` : `${m} min`;
+}
+
+// ----------------------------------------------------------------- quick start
+// The help panel renders QUICKSTART.md itself, so the document in the repo IS
+// the help in the app and neither can go stale against the other.
+//
+// The renderer below is a DELIBERATELY SMALL markdown subset — headings, lists,
+// paragraphs, bold, inline code — because that is all the document uses and a
+// full parser would be a dependency this project does not take. A test asserts
+// the document stays inside the subset, so an edit that reaches for a table or
+// a link fails the suite instead of rendering as literal asterisks.
+
+function renderMarkdownSubset(md) {
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  // Escape FIRST, then apply inline marks, so nothing in the document can
+  // inject markup.
+  const inline = (s) => esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  const out = [];
+  let list = null;
+  let para = [];
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const flushPara = () => {
+    if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; }
+  };
+
+  md.split('\n').forEach((raw) => {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) { flushPara(); closeList(); return; }
+    let m;
+    if ((m = line.match(/^(#{1,3})\s+(.*)$/))) {
+      flushPara(); closeList();
+      const h = m[1].length;
+      out.push(`<h${h}>${inline(m[2])}</h${h}>`);
+    } else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+      flushPara();
+      if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+      out.push(`<li>${inline(m[1])}</li>`);
+    } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
+      flushPara();
+      if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+      out.push(`<li>${inline(m[1])}</li>`);
+    } else if (list && /^\s{2,}\S/.test(raw)) {
+      // A wrapped continuation of the item above, joined back onto it.
+      out[out.length - 1] = out[out.length - 1]
+        .replace(/<\/li>$/, ` ${inline(line.trim())}</li>`);
+    } else {
+      closeList();
+      para.push(line.trim());
+    }
+  });
+  flushPara(); closeList();
+  return out.join('\n');
+}
+
+let quickstartHtml = null;      // fetched once, then reused
+let helpLastFocus = null;
+
+async function openHelp() {
+  const panel = $('helpPanel');
+  const body = $('helpBody');
+  helpLastFocus = document.activeElement;
+  panel.hidden = false;
+  if (quickstartHtml === null) {
+    body.innerHTML = '<p>Loading…</p>';
+    try {
+      const r = await fetch('/quickstart.md');
+      if (!r.ok) throw new Error(`quick start unavailable (${r.status})`);
+      quickstartHtml = renderMarkdownSubset(await r.text());
+    } catch (err) {
+      // Left null so a later open retries rather than caching the failure.
+      body.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
+      return;
+    }
+  }
+  body.innerHTML = quickstartHtml;
+  body.scrollTop = 0;
+  body.focus();
+}
+
+function closeHelp() {
+  $('helpPanel').hidden = true;
+  if (helpLastFocus) helpLastFocus.focus();
 }
 
 /** Compact duration for the rose, where '2 h 30 min' will not fit: '45m',

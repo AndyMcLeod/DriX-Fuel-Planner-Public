@@ -20,7 +20,21 @@
     <span class="verdict-label" id="verdictLabel">&mdash;</span>
     <span class="verdict-detail" id="verdictDetail"></span>
   </div>
+  <button type="button" id="helpBtn" class="ghost help-btn"
+          aria-haspopup="dialog">Quick start</button>
 </header>
+
+<!-- The panel renders QUICKSTART.md fetched at open time, so the document in
+     the repo IS the help in the app. Nothing here duplicates its prose. -->
+<div class="help-backdrop" id="helpPanel" hidden>
+  <div class="help-sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="help-head">
+      <h2 id="helpTitle">Quick start</h2>
+      <button type="button" id="helpClose" class="ghost" aria-label="Close">Close</button>
+    </div>
+    <div class="help-body" id="helpBody" tabindex="0"></div>
+  </div>
+</div>
 
 <main>
   <!-- ------------------------------------------------------------ inputs -->

@@ -20,6 +20,9 @@ puts a shortcut to it on the desktop, pointed at whatever folder the project is
 actually in. Moving the whole thing to another Windows machine is two steps and
 needs nothing but Python: see [`MOVING.md`](MOVING.md).
 
+New to it? [`QUICKSTART.md`](QUICKSTART.md) is a one-page tour. The **Quick
+start** button in the app renders that same file, so the two cannot drift.
+
 ```bash
 python -m unittest discover -s tests -v
 ```

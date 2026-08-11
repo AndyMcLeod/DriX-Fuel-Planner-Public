@@ -388,6 +388,41 @@ falling 112.2 → 55.2 → 2.9 → −19.0 L. The flip at ~118 h agrees with the
 switching converts (90 min ↔ 1.5 h) and round-trips exactly, same rule as the
 waypoint unit.
 
+## Quick start, and the help button (2026-08-11)
+
+`QUICKSTART.md` at the repo root is a one-page tour, and the **Quick start**
+button in the top bar renders **that same file** — fetched from `/quickstart.md`,
+which `server.py` serves from the repo root rather than a copy under `ui/`.
+
+**One source, deliberately.** This repo has repeatedly paid for the same claim
+living in several places (the retracted gauge figure survived in five). A help
+panel with its own prose would be that trap again, so there is no help text in
+`index.html` at all — a test asserts it.
+
+**The renderer is a deliberately small markdown subset** in `app.js`
+(`renderMarkdownSubset`): headings, lists, paragraphs, bold, inline code, plus
+joining a wrapped list continuation back onto its item. It escapes before
+applying marks, so nothing in the document can inject markup. It is NOT a
+markdown parser and must not grow into one — a full parser is a dependency this
+project does not take.
+
+**That constraint is the interesting part, and it is tested.** A table, a link,
+a fenced block or an image would render as literal punctuation in the panel
+while looking perfect on GitHub — a defect nobody notices, because the document
+is usually read on GitHub. `tests/test_ui.py` fails the build on any of those.
+It also checks that **no bold or code span crosses a line break**, since the
+renderer works line by line: the first draft had `**Plan\n  mission**` and would
+have shown the asterisks.
+
+**Escape, the Close button and a backdrop click all dismiss it**, focus moves to
+the panel on open and returns to the button on close, and a click inside the
+sheet does not close it. All verified live.
+
+**Restart the server after editing `server.py`.** The new route 404'd on first
+test because the running process predated the edit — Python does not reload, and
+the UI edits beside it did hot-reload, which is exactly what makes this
+confusing.
+
 ## The UI is an operating instrument now, not a briefing (2026-08-11)
 
 Andy stripped the explanatory apparatus out of the private UI as well, not just
