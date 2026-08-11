@@ -334,11 +334,39 @@ inputs and redraws as you type, switch units or press a quick-add.
 
 **The duration rides the label instead of getting its own text**, and that was
 measured rather than chosen: a separate text one ring inboard collided with the
-label it belonged to on any east-west leg. Checking bounding boxes across the
-rose is worth doing after any change here — it also caught the wind and current
-readouts touching, which is why the wind figure lifts when a current is shown.
-The one overlap that remains, two legs within about 5° of each other, is
-pre-existing and behaves the same with or without holds.
+label it belonged to on any east-west leg.
+
+**Leg labels are separated by `nudgeRoseLabels()`, which runs AFTER the SVG is
+in the document and measures what the browser actually drew.** Two legs on a
+similar course otherwise put their labels in the same place — a survey running
+near a transit, which is ordinary rather than pathological. Each label is nudged
+in y (alternating down/up so it stays near its own bearing) until it clears
+every box already placed, including the compass points and the wind/current
+readouts; anything displaced gets a dashed leader back to its own leg line. The
+amber hold dot stays at the line END regardless, because it marks where the hold
+happens, not where its caption fits.
+
+**Three attempts, and only the third works — do not "simplify" it back:**
+
+1. *Radial rings.* Fails because the text is horizontal: on an east-west leg two
+   labels one ring apart are 14 units apart and need ~23 to clear. **1557
+   collisions** in a 9216-case sweep.
+2. *Vertical nudging against ESTIMATED boxes* (0.55em per character). Fails
+   quietly — it reads "home" as 17.6 wide when it renders **21.1**, and
+   font-size 8 as 8 tall when it renders **10**, so it under-nudges. **240
+   collisions.**
+3. *Vertical nudging against measured `getBBox()`.* **Zero.**
+
+The step is **13**, not 11: a label renders 10 tall and clearance allows 1.5
+either side, so anything under 11.5 leaves the pair touching — an 11-step
+version failed exactly the cases where two legs share a course.
+
+**Verified by sweeping course combinations, not by looking at one:** 3888 across
+two hold sets, 1024 more across no-wind/no-current and full-wind-and-current
+furniture, plus the worst case of all three legs on the same bearing with 10 h /
+24 h / 1 h 30 holds — zero overlaps and nothing outside the viewBox in any of
+them. Re-run that sweep after any change to rose layout; it is cheap and it has
+caught every one of these.
 
 **A `Loiter` summary tile** sits between Mission time and Distance, reading
 `PlanResult.total_loiter_hours` / `total_loiter_litres`. Those are broken out

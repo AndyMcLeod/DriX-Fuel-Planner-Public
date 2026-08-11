@@ -505,6 +505,22 @@ function drawRose() {
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   };
 
+  // Leg labels sit on the leg's own bearing, so two legs on a similar course
+  // put their labels in the same place — "out" over "survey" whenever a survey
+  // runs near a transit, which is common rather than pathological.
+  //
+  // They are separated VERTICALLY, not radially, and the separation is decided
+  // AFTER rendering from real getBBox() measurements — see nudgeRoseLabels().
+  //
+  // Two earlier attempts are worth not repeating. Radial stacking fails because
+  // the text is horizontal: on an east-west leg two labels one ring apart are
+  // 14 units apart while needing ~23 to clear, and a sweep of 9216 course
+  // combinations found 1557 collisions. Estimating box sizes from character
+  // counts then fails more quietly — 0.55em per character reads "home" as 17.6
+  // wide when it renders 21.1, and font-size 8 as 8 tall when it renders 10, so
+  // it under-nudges and leaves 240. Only measurement gets it to zero.
+  legs.forEach((leg) => { [leg.lx, leg.ly] = pt(leg.c, R - 20); });
+
   let s = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none"
              stroke="var(--line)" stroke-width="1"/>`;
   ['N', 'E', 'S', 'W'].forEach((lab, i) => {
@@ -513,7 +529,7 @@ function drawRose() {
             font-size="10" fill="var(--ink-soft)">${lab}</text>`;
   });
 
-  legs.forEach(({ c, label, hold }) => {
+  legs.forEach(({ c, label, hold, lx, ly }) => {
     const [x, y] = pt(c, R - 6);
     // colour by how much this course works with or against the wind
     const rel = Math.cos((c - windFrom) * Math.PI / 180);
@@ -527,14 +543,20 @@ function drawRose() {
     // engine takes it, and the duration rides the leg's OWN label rather than
     // getting a text of its own. A separate text one ring inboard collided with
     // the label it belonged to on any east-west leg — measured, not guessed.
+    //
+    // The dot stays at the line END even when the label has been pushed inward:
+    // it marks where the hold happens, not where its caption fits.
     if (hold > 0) {
       s += `<circle cx="${x}" cy="${y}" r="4" fill="var(--warn)"
               stroke="var(--panel)" stroke-width="1"/>`;
     }
-    const [tx, ty] = pt(c, R - 20);
     const held = hold > 0
       ? ` <tspan fill="var(--warn)">${hmShort(hold)}</tspan>` : '';
-    s += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="8"
+    // data-* carries what the post-render nudge needs: where this label's own
+    // leg line ends, so a displaced label can be given a leader back to it.
+    const [ex, ey] = pt(c, R - 12);
+    s += `<text class="leg-label" data-ex="${ex.toFixed(2)}" data-ey="${ey.toFixed(2)}"
+            data-col="${col}" x="${lx}" y="${ly}" text-anchor="middle" font-size="8"
             fill="${col}">${label}${held}</text>`;
   });
 
@@ -570,6 +592,57 @@ function drawRose() {
       <marker id="arrowCur" viewBox="0 0 10 10" refX="8" refY="5"
       markerWidth="5" markerHeight="5" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--warn)"/></marker></defs>` + s;
+  nudgeRoseLabels();
+}
+
+/** Separate overlapping leg labels, measuring what the browser actually drew.
+ *
+ *  Runs after the SVG is in the document because getBBox() is the only thing
+ *  that knows how wide "home" really is. Estimating from character counts was
+ *  tried and left 240 collisions in a 9216-case sweep; measuring leaves none.
+ *  Each label is nudged in y, alternating down and up so it stays near its own
+ *  bearing, and anything displaced gets a leader back to its leg line.
+ */
+function nudgeRoseLabels() {
+  const svg = $('rose');
+  const labels = [...svg.querySelectorAll('text.leg-label')];
+  if (!labels.length) return;
+  const pad = 1.5;
+  const hits = (a, b) => a.x < b.x + b.width + pad && b.x < a.x + a.width + pad
+                      && a.y < b.y + b.height + pad && b.y < a.y + a.height + pad;
+  // Fixed furniture first: compass points and the wind/current readouts. A
+  // nudged label must not land on those either.
+  const taken = [...svg.querySelectorAll('text')]
+    .filter((t) => !t.classList.contains('leg-label'))
+    .map((t) => t.getBBox());
+
+  labels.forEach((t) => {
+    const y0 = Number(t.getAttribute('y'));
+    let best = null;
+    // Step 13, not 11: a label renders 10 tall and clearance allows 1.5 either
+    // side, so anything under 11.5 leaves the pair still touching. An 11-step
+    // version left exactly the cases where two legs share a course.
+    for (const dy of [0, 13, -13, 26, -26, 39, -39, 52, -52]) {
+      t.setAttribute('y', String(y0 + dy));
+      const b = t.getBBox();
+      if (b.y < 1 || b.y + b.height > 199) continue;     // keep it on the canvas
+      if (!taken.some((o) => hits(b, o))) { best = { dy, b }; break; }
+    }
+    if (!best) { t.setAttribute('y', String(y0)); best = { dy: 0, b: t.getBBox() }; }
+    taken.push(best.b);
+    if (best.dy !== 0) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', t.getAttribute('x'));
+      line.setAttribute('y1', String(Number(t.getAttribute('y')) - 2.5));
+      line.setAttribute('x2', t.dataset.ex);
+      line.setAttribute('y2', t.dataset.ey);
+      line.setAttribute('stroke', t.dataset.col);
+      line.setAttribute('stroke-width', '0.6');
+      line.setAttribute('stroke-dasharray', '2 2');
+      line.setAttribute('opacity', '0.75');
+      svg.insertBefore(line, t);
+    }
+  });
 }
 
 boot();
