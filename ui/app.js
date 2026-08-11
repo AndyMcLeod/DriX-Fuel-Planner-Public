@@ -36,16 +36,9 @@ async function boot() {
     const o = document.createElement('option');
     o.value = key;
     o.textContent = g.label + (g.status === 'derived' ? ' — derived curve' : ' — measured');
-    o.dataset.note = g.status_note || '';
     gon.appendChild(o);
   });
   gon.value = (MODEL.gondolas && MODEL.gondolas.default) || 'em712';
-  const onGondola = () => {
-    const o = gon.selectedOptions[0];
-    $('gondolaNote').textContent = o ? o.dataset.note : '';
-  };
-  gon.addEventListener('change', onGondola);
-  onGondola();
 
   const cap = $('capacityPreset');
   MODEL.capacity_options.options.forEach((opt) => {
@@ -126,9 +119,6 @@ function onSeaChange() {
   const opt = $('seaState').selectedOptions[0];
   const p = Number(opt.dataset.premium);
   $('seaPremium').value = signedPct(p) + ' RPM';
-  $('seaNote').textContent =
-    'Assumption, not a fitted value — the source data supports one anchor only ' +
-    '(WMO 2–3, somewhere between 0% and 13%). Everything else is judgement.';
   refreshDerived();
 }
 
@@ -376,29 +366,11 @@ function render(p) {
         s.runs_dry ? 'dry' : s.within_reserve ? 'ok' : 'breach'}</span></td>
     </tr>`).join('');
 
-  const gn = $('gaugeNote');
-  gn.innerHTML = p.gauge_l_per_point == null ? '' :
-    `The reserve floor is a <strong>needle position</strong>, not a number of litres, so ` +
-    `mission fuel is what the gauge holds between full and the floor: ` +
-    `<strong>${fmt(p.gauge_usable_litres)} L</strong>. No capacity assumption enters it. ` +
-    `The measured 72–86% band is ${fmt(p.gauge_l_per_point, 2)} L per indicated point; ` +
-    (p.gauge_unlocated_l != null && Math.abs(p.gauge_unlocated_l) < 1
-      ? `outside it the profile carries the balance of the ${fmt(p.tank_volume_l, 0)} L ` +
-        `drawing volume, which is an <strong>inference</strong> the drawings support and ` +
-        `no drawdown has tested.`
-      : `the gauge is taken to speak only for its own span, leaving about ` +
-        `<strong>${fmt(p.gauge_unlocated_l, 0)} L</strong> of the ` +
-        `${fmt(p.tank_volume_l, 0)} L tank outside the indicated range.`);
-
-  const ct = $('capTable').querySelector('tbody');
-  ct.innerHTML = p.capacity_scenarios.map((c) => `
-    <tr class="${Math.abs(c.capacity_l - p.capacity_l) < 0.01 ? 'here' : ''}">
-      <td>${escapeHtml(c.label)}</td>
-      <td>${remain(c.remaining_fraction, c.remaining_litres)}</td>
-      <td>${fmt(c.margin_litres)} L</td>
-      <td><span class="pill ${c.within_reserve ? 'ok' : 'bad'}">${
-        c.runs_dry ? 'dry' : c.within_reserve ? 'ok' : 'breach'}</span></td>
-    </tr>`).join('');
+  // The tank/gauge card is gone (Andy, 2026-08-11), so `gauge_*` and
+  // `capacity_scenarios` are no longer rendered here. The needle itself is NOT
+  // lost: it is the "Needle on return" tile, and `verdict` still drives the
+  // banner — including `gauge_breach`, where the capacity row passes and the
+  // needle does not. Verification rail 6 stays satisfied.
 }
 
 const tile = (k, v, u, cls = '') =>

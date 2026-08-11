@@ -46,7 +46,6 @@
           <input type="number" id="windFrom" min="0" max="360" step="1" value="270">
         </label>
       </div>
-      <p class="note" id="seaNote"></p>
     </section>
 
     <section class="card">
@@ -77,7 +76,6 @@
           <output class="readout" id="usableOut">&mdash;</output>
         </div>
       </div>
-      <p class="note" id="gondolaNote"></p>
     </section>
 
     <section class="card">
@@ -230,28 +228,9 @@
         </div>
       </section>
 
-      <section class="card">
-        <h2>The tank is 250 L, and the gauge is treated as non-linear</h2>
-        <p class="note" id="gaugeNote"></p>
-        <div class="tablewrap">
-          <table id="capTable">
-            <thead><tr>
-              <th>Capacity basis</th><th>On return</th><th>Margin over reserve</th><th></th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
     </div>
   </div>
 </main>
-
-<footer>
-  <p>EM2040 curves measured from the Aug 2026 MCAP logs (fuel law valid 1400&ndash;3100 rpm,
-     so 8 kt survey planning is interpolation); EM712 curves from the 2024 trials
-     (1020&ndash;2500 rpm &mdash; 8 kt on that gondola is flagged as extrapolation).
-     The sea-state premium and the wind scaling remain assumptions, not measurements.</p>
-</footer>
 
 <script src="/static/app.js"></script>
 </body>

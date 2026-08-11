@@ -226,6 +226,35 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## The UI is an operating instrument now, not a briefing (2026-08-11)
+
+Andy stripped the explanatory apparatus out of the private UI as well, not just
+the public export. Removed outright:
+
+- the gondola description under Vessel (`gondolaNote`),
+- the sea-state assumption note under Environment (`seaNote`),
+- the mission-clock note,
+- the page footer (fit windows and the assumptions caveat),
+- **the whole tank/gauge card** — its discussion, `gaugeNote`, and the
+  `capTable` capacity-scenario table.
+
+The JS that filled each was deleted with it; nothing writes to a node that is no
+longer there. `styles.css` lost its now-dead `footer` rules.
+
+**What was checked before agreeing the tank card could go.** It held the only
+rendering of `capacity_scenarios`, so that comparison is genuinely gone from the
+UI — it is still on `PlanResult` for any caller that wants it. What it did NOT
+hold is the needle: `indicated_return_pct` is the **"Needle on return" tile** in
+the Summary card, and `verdict` still drives the banner, `gauge_breach`
+included. **Verification rail 6 therefore still holds** — every surface renders
+`verdict` and quotes spare against `binding_margin_*`. Confirmed live across all
+four states: WITHIN RESERVE, BREACHES RESERVE, RUNS DRY (twice, at different
+depths), each with its detail line.
+
+What survives is what an operator acts on: the verdict banner, nine summary
+tiles, warnings, the per-leg table with its extrapolation flags, mission marks,
+and the sea-state sensitivity band.
+
 ## Max survey fills in the line count (2026-08-11)
 
 Pressing **Max survey for the reserve** now writes the solved count into the
@@ -724,10 +753,17 @@ downstream reverts on the next export — this has now bitten twice:
 
 **The commentary split is deliberate.** Static explanatory prose is marked
 `<p class="note commentary">` and the public build drops it (Andy: cleaner view
-in public; the private UI keeps every word). The **id-bearing** notes —
-`legNotes`, `gaugeNote`, `maxOut`, `seaNote`, `gondolaNote` — are JS-filled with
-computed output and **must never be stripped**: `legNotes` carries the per-leg
-extrapolation flags, which verification rail 1 calls the product, not noise.
+in public; the private UI keeps the rest). **Four blocks remain** — survey
+lines, the compass legend, mission marks, and the sensitivity preamble — so
+`EXPECTED_COMMENTARY` is 4. It was 6 until the mission-clock note and the whole
+tank/gauge card were deleted outright on 2026-08-11 (see below).
+
+The **id-bearing** notes are JS-filled with computed output and **must never be
+stripped**. Two survive: `legNotes`, which carries the per-leg extrapolation
+flags that verification rail 1 calls the product rather than noise, and
+`maxOut`. `seaNote`, `gondolaNote` and `gaugeNote` are **gone** — deleted with
+their cards, along with the JS that wrote them.
+
 The script counts what it removes and aborts on a mismatch rather than quietly
 publishing a UI that still explains itself, or one missing a warning.
 

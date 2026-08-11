@@ -184,12 +184,6 @@ tr.here td { font-weight: 700; }
 
 .compass-card svg { width: 100%; max-width: 15rem; margin: 0 auto; display: block; }
 
-footer {
-  max-width: 1500px; margin: 0 auto; padding: 0 1.5rem 2.5rem;
-  color: var(--ink-soft); font-size: .78rem;
-}
-footer p { max-width: 70ch; margin: 0; }
-
 /* Secondary detail inside a table cell — the survey premium swing. */
 .soft { color: var(--ink-soft); font-size: .85em; }
 
