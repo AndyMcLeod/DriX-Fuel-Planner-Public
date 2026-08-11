@@ -226,25 +226,44 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
-## Form layout is not mission order (2026-08-11)
+## Three leg orders, and only the visual one differs (2026-08-11)
 
-The survey block sits **below both transits** in the form (Andy's call). The
-mission it plans is unchanged: **out → survey → home**.
+The survey block **reads below both transits** (Andy's call), while the form is
+**typed and tabbed in mission order**:
 
-Those two orders are now deliberately different, and `tests/test_ui.py` pins
-both plus the fact that they differ. `buildBody()` assembles legs from element
-**ids**, never from document order, so moving a block cannot reorder a plan —
-but nothing said so before, and either file could have been "tidied" into
-agreement by someone assuming they were meant to match. The dangerous direction
-is the request following the form: that would survey after coming home. Both
-mutations are killed by the tests.
+| | order |
+|---|---|
+| Document — and therefore **tab order** | out → survey → home |
+| Request, from `buildBody()` | out → survey → home |
+| Visual, from CSS `order` | out → **home** → survey |
 
-They are static-source assertions, not a browser test — they check what the
-files say, not what a browser renders. That is the right trade here because the
-failure being guarded against is a source edit, and it keeps the suite
-dependency-free. The rendered result was checked once by hand: form reads out /
-home / survey top to bottom, request and result table both read out / survey /
-home.
+**The markup stays in mission order; CSS does the moving.** `.legs` is a flex
+column and `.leg-visual-last` carries `order: 1`. Tab order is document order
+and nothing else, so the keyboard walks the form in the order the mission is
+flown even though the eye reads the survey last.
+
+**Not `tabindex`** — that was the first instinct and it is wrong. A *positive*
+tabindex forms its own sequence ahead of every `tabindex=0` element in the
+document, so tabbing from the top of the page would reach the leg inputs before
+Environment and Vessel. A test asserts no positive tabindex exists, because the
+next person will have the same instinct.
+
+Know the cost: focus order and visual order now genuinely differ, which is the
+usual argument *against* CSS reordering. It is deliberate here — data entry
+follows the mission, reading follows the layout — and it is the trade Andy
+asked for, not an oversight.
+
+`:first-of-type` still suppresses the separator correctly: it follows DOCUMENT
+order, and `order: 1` moves only the survey, so Transit out leads either way.
+Verified in the browser — border-top 0px on Transit out, 1px on the other two.
+
+`tests/test_ui.py` pins all three orders, that exactly one block carries the
+moving class, that the class actually resolves to a flex `order`, and that no
+positive tabindex exists. Four mutations killed: dropping the class, zeroing the
+order, removing the flex parent, and adding a positive tabindex. They are
+static-source assertions — they check what the files say, not what a browser
+renders — which is the right trade when the failure guarded against is a source
+edit. The geometry was checked by hand instead.
 
 ## Mission waypoints, and their unit (2026-08-11)
 

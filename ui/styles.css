@@ -113,7 +113,17 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   color: var(--ink-soft); font-variant-numeric: tabular-nums;
 }
 
+/* Legs are authored in MISSION order (out, survey, home) so the keyboard walks
+   the form in the order the mission is flown — tab order is document order and
+   nothing else. `order` moves the survey block to the bottom visually, putting
+   the two transits together, without touching the tab sequence. */
+.legs { display: flex; flex-direction: column; }
+.leg-visual-last { order: 1; }
+
 .leg { padding: .7rem 0; border-top: 1px dashed var(--line); }
+/* :first-of-type follows DOCUMENT order, which is still the visually first
+   block: `order: 1` moves only the survey, so Transit out leads either way and
+   the separator above it stays suppressed. */
 .leg:first-of-type { border-top: 0; padding-top: 0; }
 .leg h3 { margin: 0 0 .5rem; font-size: .9rem; }
 
