@@ -133,10 +133,22 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   display: flex; align-items: center; gap: .4rem;
   margin-top: .6rem; flex-wrap: wrap;
 }
-.loiter-label {
+.row-label {
   font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
   color: var(--ink-soft); font-weight: 700;
 }
+
+/* Per-leg weather. Wind and current vary over a two-day mission, so they live
+   on the leg rather than on the mission. Same compact row shape as loiter. */
+.weather {
+  display: flex; align-items: center; gap: .4rem;
+  margin-top: .6rem; flex-wrap: wrap;
+}
+.weather label {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .74rem; color: var(--ink-soft);
+}
+.weather input { width: 4rem; padding: .3rem .4rem; font-size: .82rem; }
 .loiter input { width: 4.5rem; }
 .loiter select { width: auto; }
 .loiter input, .loiter select { padding: .3rem .4rem; font-size: .82rem; }

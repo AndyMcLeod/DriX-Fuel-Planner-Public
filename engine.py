@@ -203,6 +203,32 @@ class Leg:
     # where they were, and it is the only part of this that is a convention
     # rather than a measurement.
     loiter_hours: float = 0.0
+    # -- Weather on THIS leg. A mission runs for two days at survey speed, so
+    # the wind that was on the bow going out is not the wind coming home, and a
+    # tide turns twice in between. Each is None to mean "use the mission-wide
+    # Environment", so a plan that does not set them behaves exactly as before.
+    # Speed and direction are independent: setting only a speed keeps the
+    # mission's direction, which is what an operator changing strength alone
+    # expects.
+    wind_speed_kt: float | None = None
+    wind_from_deg: float | None = None
+    current_speed_kt: float | None = None
+    current_set_deg: float | None = None
+
+    def environment(self, env: 'Environment') -> 'Environment':
+        """The mission environment with this leg's own weather laid over it.
+
+        Sea state is deliberately NOT per-leg: it drives an assumed premium
+        with a single measured anchor behind it, and giving it three values
+        would imply a resolution the model does not have.
+        """
+        pick = lambda mine, theirs: theirs if mine is None else mine  # noqa: E731
+        return Environment(
+            wmo_sea_state=env.wmo_sea_state,
+            wind_speed_kt=pick(self.wind_speed_kt, env.wind_speed_kt),
+            wind_from_deg=pick(self.wind_from_deg, env.wind_from_deg),
+            current_speed_kt=pick(self.current_speed_kt, env.current_speed_kt),
+            current_set_deg=pick(self.current_set_deg, env.current_set_deg))
 
     def resolved_distance_nm(self) -> float:
         """Ground covered. Derived from the lines when they are given."""
@@ -230,6 +256,10 @@ class Leg:
             errs.append(f'{self.name}: speed must be greater than zero')
         if self.loiter_hours < 0:
             errs.append(f'{self.name}: loiter must not be negative')
+        if self.wind_speed_kt is not None and self.wind_speed_kt < 0:
+            errs.append(f'{self.name}: wind speed must not be negative')
+        if self.current_speed_kt is not None and self.current_speed_kt < 0:
+            errs.append(f'{self.name}: current speed must not be negative')
         if self.kind not in ('transit', 'survey'):
             errs.append(f'{self.name}: kind must be "transit" or "survey"')
         if self.lines is not None:
@@ -495,6 +525,14 @@ class LegResult:
     rpm_max: float = 0.0
     premium_min: float = 0.0
     premium_max: float = 0.0
+    # -- The weather this leg was actually computed under, after the leg's own
+    # values were laid over the mission's. Reported so a surface never has to
+    # re-derive the fallback, and so a plan can be read back without the Legs
+    # that produced it.
+    wind_speed_kt: float = 0.0
+    wind_from_deg: float = 0.0
+    current_speed_kt: float = 0.0
+    current_set_deg: float = 0.0
     # -- Loiter: time held on station at the END of this leg, making no way.
     # `hours`, `litres`, `fuel_rate_lph` and `nm_per_l` above all remain
     # UNDERWAY quantities, so `litres == fuel_rate_lph * hours` still holds and
@@ -612,6 +650,10 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     the weather costs more than the reciprocal saves. See Leg for the size of
     that error, which is what this leg used to make.
     """
+    # This leg's own weather, falling back to the mission's. Resolved ONCE,
+    # here, so every reference below — premiums, current, notes — sees the same
+    # thing and no path can accidentally read the mission-wide value.
+    env = leg.environment(env)
     distance = leg.resolved_distance_nm()
     # Duration follows SOG: the ground still has to be covered. A current moves
     # the FUEL, never the clock.
@@ -733,6 +775,8 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
         heading_premium=head_p, total_premium=total_p, fuel_rate_lph=rate,
         litres=litres, nm_per_l=(distance / litres) if litres > 0 else 0.0,
         extrapolated=extrapolated, notes=notes,
+        wind_speed_kt=env.wind_speed_kt, wind_from_deg=env.wind_from_deg,
+        current_speed_kt=env.current_speed_kt, current_set_deg=env.current_set_deg,
         loiter_hours=loiter_h, loiter_litres=loiter_l, loiter_lph=loiter_lph,
         loiter_measured=loiter_measured, total_litres=litres + loiter_l,
         lines=leg.lines, line_length_nm=leg.line_length_nm,

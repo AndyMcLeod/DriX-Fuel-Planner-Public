@@ -226,6 +226,53 @@ It uses the **through-origin** law variants per the drivetrain facts above,
 refitted in-script from `em2040_fit_2026-08-09.json` plus the idle anchor.
 Import to Sheets via File → Import → Upload → *Insert new sheet(s)*.
 
+## Weather belongs to the LEG, not the mission (2026-08-11)
+
+Andy: mission durations make a single wind and current wrong. `Leg` now carries
+optional `wind_speed_kt`, `wind_from_deg`, `current_speed_kt`, `current_set_deg`,
+and the UI puts all four on each of the three leg cards. A mission runs two days
+at survey speed — the wind on the bow going out is not the wind coming home, and
+the tide turns twice in between.
+
+**`None` means "use the mission Environment"; 0 means becalmed.** They are
+different, and conflating them would silently give a calm leg the mission's
+20 kt. `Leg.environment(env)` resolves each field independently, so setting a
+speed alone keeps the mission's direction rather than resetting it to north —
+which is what an operator changing strength expects. A mutation using
+truthiness instead of `is None` is killed.
+
+**Resolved ONCE at the top of `plan_leg`**, by rebinding `env`, so every path
+below — premiums, current, notes — sees the same thing and none can accidentally
+read the mission-wide value. `LegResult` reports the resolved four, so a plan can
+be read back without the `Leg`s that produced it.
+
+**Sea state stays mission-wide, deliberately.** It drives an assumed premium with
+a single measured anchor behind it; three values would imply a resolution the
+model does not have. A test pins that.
+
+**Absent means old behaviour**, exactly: a plan with no per-leg weather
+reproduces the mission-wide answer, and a plan setting every leg to the mission's
+values reproduces it to nine places.
+
+What it buys, measured live: 25 kt on the nose and 2 kt of foul tide outbound
+against 5 kt astern and the same tide fair coming home turns a symmetric
+25 NM/25 NM transit pair into **31.8 L out and 5.7 L home** — and flags both, one
+above the fitted RPM window and one below it.
+
+**In the UI** the Environment card keeps only sea state. The rose draws one
+arrow per DISTINCT vector, tagged with the legs sharing it, and collapses back to
+the old single pair when all three agree. Each leg line is coloured by ITS OWN
+wind. The `Current` tile reports one value only when every leg agrees, otherwise
+the range and "varies by leg" — averaging three forecasts into one figure is
+exactly the quiet blending this planner exists to avoid.
+
+**The arrow tags had to join the label nudger.** With three forecasts a wind tag
+and a current tag can land on the same bearing, and they did. `.wx-label` now
+goes through `nudgeRoseLabels()` after the leg labels — leg names get first claim
+on their own bearing — and only leg labels get a leader, because a weather tag
+names its own legs. Verified by sweeping 2592 course-and-weather combinations:
+zero overlaps.
+
 ## Current: set and drift (2026-08-11)
 
 `Environment.current_speed_kt` / `current_set_deg`, beside the wind fields.

@@ -142,6 +142,25 @@ they are for.
   the default vessel under reading A; 347 NM under B). A solver whose answer the
   planner then flags red would be a bug, and a test asserts it never happens.
 
+## Weather is per leg
+
+A mission runs two days at survey speed, so the wind on the bow going out is not
+the wind coming home. Every leg takes its own **`wind_speed_kt`**,
+**`wind_from_deg`**, **`current_speed_kt`** and **`current_set_deg`**, and the UI
+puts all four on each leg card.
+
+Each is optional and independent. **Omit one and the leg uses the mission
+`environment`; set it to 0 and the leg is becalmed** — those are different
+things. Setting a speed alone keeps the mission's direction.
+
+**Sea state stays mission-wide.** It drives an assumed premium with one measured
+anchor behind it; three values would imply a resolution the model does not have.
+
+The effect is not small. A symmetric 25 NM out-and-back at 7 kt, with 25 kt on
+the nose and 2 kt of foul tide outbound against 5 kt astern and the same tide
+fair coming home, costs **31.8 L out and 5.7 L home** — and both legs are flagged,
+one above the fitted RPM window and one below it.
+
 ## Current — set and drift
 
 `current_speed_kt` and `current_set_deg` sit beside the wind fields.

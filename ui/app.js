@@ -62,9 +62,9 @@ async function boot() {
   });
   ['capacity', 'reserve', 'startLevel', 'surLines', 'surRange'].forEach((id) =>
     $(id).addEventListener('input', refreshDerived));
-  ['windSpeed', 'windFrom', 'currentSpeed', 'currentSet',
-   'outCourse', 'surCourse', 'homeCourse'].forEach((id) =>
-    $(id).addEventListener('input', drawRose));
+  ['outCourse', 'surCourse', 'homeCourse'].concat(
+    LEG_PREFIXES.flatMap((p) => [p + 'WindKt', p + 'WindFrom', p + 'CurKt', p + 'CurSet'])
+  ).forEach((id) => $(id).addEventListener('input', drawRose));
 
   $('waypointUnit').addEventListener('change', onWaypointUnitChange);
   wireLoiter();
@@ -214,14 +214,8 @@ function refreshDerived() {
 // ------------------------------------------------------------------ request
 function buildBody() {
   return {
-    environment: {
-      wmo_sea_state: Number($('seaState').value),
-      wind_speed_kt: Number($('windSpeed').value),
-      wind_from_deg: Number($('windFrom').value),
-      // Wind FROM, current TOWARD — opposite conventions, as at sea.
-      current_speed_kt: Number($('currentSpeed').value),
-      current_set_deg: Number($('currentSet').value),
-    },
+    // Sea state stays mission-wide; wind and current are per leg, below.
+    environment: { wmo_sea_state: Number($('seaState').value) },
     vessel: {
       capacity_l: Number($('capacity').value),
       reserve_fraction: Number($('reserve').value) / 100,
@@ -231,17 +225,17 @@ function buildBody() {
     legs: [
       { name: 'Transit out', kind: 'transit', distance_nm: Number($('outRange').value),
         speed_kt: Number($('outSpeed').value), course_deg: Number($('outCourse').value),
-        loiter_hours: loiterHours('out') },
+        loiter_hours: loiterHours('out'), ...legWeather('out') },
       { name: 'Survey', kind: 'survey',
         // distance is derived server-side from lines x line length
         distance_nm: 0,
         lines: Number($('surLines').value),
         line_length_nm: Number($('surRange').value),
         speed_kt: Number($('surSpeed').value), course_deg: Number($('surCourse').value),
-        loiter_hours: loiterHours('sur') },
+        loiter_hours: loiterHours('sur'), ...legWeather('sur') },
       { name: 'Transit home', kind: 'transit', distance_nm: Number($('homeRange').value),
         speed_kt: Number($('homeSpeed').value), course_deg: Number($('homeCourse').value),
-        loiter_hours: loiterHours('home') },
+        loiter_hours: loiterHours('home'), ...legWeather('home') },
     ],
     // Blank start time is sent as null: elapsed hours only, no clock.
     start_time: $('startTime').value || null,
@@ -395,15 +389,14 @@ function render(p) {
          p.total_loiter_hours > 0 ? 'warn' : ''),
     tile('Distance', fmt(p.total_distance_nm, 0), 'NM'),
     tile('Overall', fmt(p.total_distance_nm / p.total_litres, 2), 'NM/L'),
-    // Read from the PLAN, not from the form: these are the conditions the
-    // numbers above were computed under, which is not the same thing as
+    // Read from the PLAN's legs, not from the form: these are the conditions
+    // the numbers above were computed under, which is not the same thing as
     // whatever the inputs say after someone has edited them without replanning.
-    // "sets" is stated on the tile because current takes the opposite
-    // convention to wind and an unlabelled bearing here would be a trap.
-    tile('Current', `${fmt(p.current_speed_kt, 1)} kt`,
-         p.current_speed_kt > 0
-           ? `sets ${fmt(p.current_set_deg, 0)}°T`
-           : 'slack'),
+    // Current is per leg now, so the tile reports one value only when every leg
+    // agrees — claiming a single figure across three forecasts would be the
+    // kind of quiet averaging this planner exists to avoid. "sets" is spelled
+    // out because current takes the opposite convention to wind.
+    currentTile(p.legs),
   ].join('');
 
   const warn = $('warnings');
@@ -483,6 +476,21 @@ function hm(hours) {
   const m = totalMin % 60;
   if (h && m) return `${h} h ${m} min`;
   return h ? `${h} h` : `${m} min`;
+}
+
+// -------------------------------------------------------------- leg weather
+// Wind and current belong to the leg, not the mission: two days at survey speed
+// means the wind on the bow going out is not the wind coming home, and the tide
+// turns twice in between.
+const LEG_PREFIXES = ['out', 'sur', 'home'];
+
+function legWeather(p) {
+  return {
+    wind_speed_kt: Number($(p + 'WindKt').value) || 0,
+    wind_from_deg: Number($(p + 'WindFrom').value) || 0,
+    current_speed_kt: Number($(p + 'CurKt').value) || 0,
+    current_set_deg: Number($(p + 'CurSet').value) || 0,
+  };
 }
 
 // ----------------------------------------------------------------- quick start
@@ -574,6 +582,21 @@ function closeHelp() {
   if (helpLastFocus) helpLastFocus.focus();
 }
 
+/** The Current tile, summarising what each leg was actually planned under. */
+function currentTile(legs) {
+  const vecs = [...new Set(legs.map(
+    (l) => `${Number(l.current_speed_kt).toFixed(2)}|${Number(l.current_set_deg).toFixed(0)}`))];
+  if (vecs.length === 1) {
+    const kt = Number(legs[0].current_speed_kt);
+    return tile('Current', `${fmt(kt, 1)} kt`,
+                kt > 0 ? `sets ${fmt(legs[0].current_set_deg, 0)}°T` : 'slack');
+  }
+  const kts = legs.map((l) => Number(l.current_speed_kt));
+  return tile('Current',
+              `${fmt(Math.min(...kts), 1)}–${fmt(Math.max(...kts), 1)} kt`,
+              'varies by leg', 'warn');
+}
+
 /** Compact duration for the rose, where '2 h 30 min' will not fit: '45m',
  *  '2h', '2h30'. The tile and the leg notes keep the long form. */
 function hmShort(hours) {
@@ -591,15 +614,32 @@ const tile = (k, v, u, cls = '') =>
 // -------------------------------------------------------------------- rose
 function drawRose() {
   const cx = 100, cy = 100, R = 74;
-  const windFrom = Number($('windFrom').value) || 0;
-  const windKt = Number($('windSpeed').value) || 0;
-  const curSet = Number($('currentSet').value) || 0;
-  const curKt = Number($('currentSpeed').value) || 0;
-  const legs = [
-    { c: Number($('outCourse').value) || 0, label: 'out', hold: loiterHours('out') },
-    { c: Number($('surCourse').value) || 0, label: 'survey', hold: loiterHours('sur') },
-    { c: Number($('homeCourse').value) || 0, label: 'home', hold: loiterHours('home') },
-  ];
+  // Each leg carries its own weather now, so the rose draws one arrow per
+  // DISTINCT vector rather than one for the mission. When the three legs share
+  // a forecast — the common case — that collapses back to a single pair of
+  // arrows and the picture is what it always was.
+  const legs = ['out', 'sur', 'home'].map((p, i) => ({
+    p,
+    c: Number($(p + 'Course').value) || 0,
+    label: ['out', 'survey', 'home'][i],
+    hold: loiterHours(p),
+    windKt: Number($(p + 'WindKt').value) || 0,
+    windFrom: Number($(p + 'WindFrom').value) || 0,
+    curKt: Number($(p + 'CurKt').value) || 0,
+    curSet: Number($(p + 'CurSet').value) || 0,
+  }));
+  const distinct = (kt, deg) => {
+    const seen = new Map();
+    legs.forEach((l) => {
+      if (l[kt] <= 0) return;
+      const key = `${l[kt]}|${l[deg]}`;
+      if (!seen.has(key)) seen.set(key, { kt: l[kt], deg: l[deg], legs: [] });
+      seen.get(key).legs.push(l.label);
+    });
+    return [...seen.values()];
+  };
+  const winds = distinct('windKt', 'windFrom');
+  const currents = distinct('curKt', 'curSet');
   const pt = (deg, r) => {
     const a = (deg - 90) * Math.PI / 180;
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -629,9 +669,11 @@ function drawRose() {
             font-size="10" fill="var(--ink-soft)">${lab}</text>`;
   });
 
-  legs.forEach(({ c, label, hold, lx, ly }) => {
+  legs.forEach(({ c, label, hold, lx, ly, windKt, windFrom }) => {
     const [x, y] = pt(c, R - 6);
-    // colour by how much this course works with or against the wind
+    // Colour by how this course works with or against ITS OWN wind — which is
+    // the point of per-leg weather: the return leg can be green while the
+    // outbound is red under a wind that has backed in between.
     const rel = Math.cos((c - windFrom) * Math.PI / 180);
     const col = windKt <= 0 ? 'var(--ink-soft)'
       : rel > 0.25 ? 'var(--bad)' : rel < -0.25 ? 'var(--ok)' : 'var(--ink-soft)';
@@ -660,30 +702,47 @@ function drawRose() {
             fill="${col}">${label}${held}</text>`;
   });
 
-  if (windKt > 0) {
-    // wind blows TOWARDS windFrom + 180
-    const [sx, sy] = pt(windFrom, R - 2);
-    const [ex, ey] = pt(windFrom + 180, R - 34);
+  // Wind arrows: one per distinct vector, blowing TOWARDS from + 180. Thinner
+  // when the legs disagree, and tagged with which legs share it — an untagged
+  // arrow in a mission with three forecasts would be a guess.
+  const many = winds.length + currents.length > 2;
+  winds.forEach((w) => {
+    const [sx, sy] = pt(w.deg, R - 2);
+    const [ex, ey] = pt(w.deg + 180, R - 34);
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--wind)"
-            stroke-width="3" stroke-linecap="round"
+            stroke-width="${winds.length > 1 ? 2 : 3}" stroke-linecap="round"
             marker-end="url(#arrow)"/>`;
-    // Lifted when the current text sits under it, or the two bounding boxes
-    // touch — measured, and it was the wind/current pair that showed it.
-    s += `<text x="${cx}" y="${cy + (curKt > 0 ? -2 : 4)}" text-anchor="middle"
-            font-size="9" fill="var(--wind)">${windKt} kt</text>`;
-  }
+    if (many) {
+      const [tx, ty] = pt(w.deg + 180, R - 40);
+      s += `<text class="wx-label" x="${tx}" y="${ty}" text-anchor="middle"
+              font-size="7" fill="var(--wind)">${w.kt} kt ${w.legs.join('/')}</text>`;
+    }
+  });
 
   // The current arrow points where the water GOES — the opposite convention to
   // the wind arrow beside it, which is exactly why it gets its own colour and
   // its own dashed line rather than sharing the wind's styling.
-  if (curKt > 0) {
-    const [sx, sy] = pt(curSet + 180, R - 2);
-    const [ex, ey] = pt(curSet, R - 34);
+  currents.forEach((c) => {
+    const [sx, sy] = pt(c.deg + 180, R - 2);
+    const [ex, ey] = pt(c.deg, R - 34);
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--warn)"
-            stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 3"
-            marker-end="url(#arrowCur)"/>`;
-    s += `<text x="${cx}" y="${cy + (windKt > 0 ? 12 : 4)}" text-anchor="middle"
-            font-size="9" fill="var(--warn)">${curKt} kt set</text>`;
+            stroke-width="${currents.length > 1 ? 2 : 2.5}" stroke-linecap="round"
+            stroke-dasharray="5 3" marker-end="url(#arrowCur)"/>`;
+    if (many) {
+      const [tx, ty] = pt(c.deg, R - 40);
+      s += `<text class="wx-label" x="${tx}" y="${ty}" text-anchor="middle"
+              font-size="7" fill="var(--warn)">${c.kt} kt ${c.legs.join('/')}</text>`;
+    }
+  });
+
+  // The centre readout only means anything when every leg agrees; otherwise the
+  // per-arrow tags carry it.
+  if (!many) {
+    const w = winds[0], c = currents[0];
+    if (w) s += `<text x="${cx}" y="${cy + (c ? -2 : 4)}" text-anchor="middle"
+            font-size="9" fill="var(--wind)">${w.kt} kt</text>`;
+    if (c) s += `<text x="${cx}" y="${cy + (w ? 12 : 4)}" text-anchor="middle"
+            font-size="9" fill="var(--warn)">${c.kt} kt set</text>`;
   }
 
   $('rose').innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
@@ -705,7 +764,12 @@ function drawRose() {
  */
 function nudgeRoseLabels() {
   const svg = $('rose');
-  const labels = [...svg.querySelectorAll('text.leg-label')];
+  // Leg labels first, then the per-arrow weather tags: the leg names matter
+  // more, so they get first claim on their own bearing and the wx tags move
+  // around them. Both need nudging — with three forecasts a wind tag and a
+  // current tag can land on the same bearing, which they did.
+  const labels = [...svg.querySelectorAll('text.leg-label'),
+                  ...svg.querySelectorAll('text.wx-label')];
   if (!labels.length) return;
   const pad = 1.5;
   const hits = (a, b) => a.x < b.x + b.width + pad && b.x < a.x + a.width + pad
@@ -713,7 +777,8 @@ function nudgeRoseLabels() {
   // Fixed furniture first: compass points and the wind/current readouts. A
   // nudged label must not land on those either.
   const taken = [...svg.querySelectorAll('text')]
-    .filter((t) => !t.classList.contains('leg-label'))
+    .filter((t) => !t.classList.contains('leg-label')
+                && !t.classList.contains('wx-label'))
     .map((t) => t.getBBox());
 
   labels.forEach((t) => {
@@ -730,7 +795,9 @@ function nudgeRoseLabels() {
     }
     if (!best) { t.setAttribute('y', String(y0)); best = { dy: 0, b: t.getBBox() }; }
     taken.push(best.b);
-    if (best.dy !== 0) {
+    // Only leg labels get a leader. A weather tag names the legs it applies to
+    // in its own text, so it identifies itself wherever it ends up.
+    if (best.dy !== 0 && t.classList.contains('leg-label')) {
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       line.setAttribute('x1', t.getAttribute('x'));
       line.setAttribute('y1', String(Number(t.getAttribute('y')) - 2.5));

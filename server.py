@@ -139,6 +139,10 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         # converts; keeping one unit on the wire means the engine never has to
         # guess which it was handed.
         loiter = l.get('loiter_hours')
+        # Per-leg weather is OPTIONAL and each field is independent: absent
+        # means "use the mission Environment", which is not the same as zero.
+        # Coercing a missing value to 0.0 here would silently becalm a leg.
+        opt = lambda k: (float(l[k]) if l.get(k) not in (None, '') else None)  # noqa: E731
         return Leg(name=str(l.get('name', f'Leg {i + 1}')),
                    kind=str(l.get('kind', 'transit')),
                    distance_nm=float(l.get('distance_nm', 0.0)),
@@ -146,7 +150,11 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
                    course_deg=float(l.get('course_deg', 0.0)),
                    lines=int(lines) if lines not in (None, '') else None,
                    line_length_nm=float(length) if length not in (None, '') else None,
-                   loiter_hours=float(loiter) if loiter not in (None, '') else 0.0)
+                   loiter_hours=float(loiter) if loiter not in (None, '') else 0.0,
+                   wind_speed_kt=opt('wind_speed_kt'),
+                   wind_from_deg=opt('wind_from_deg'),
+                   current_speed_kt=opt('current_speed_kt'),
+                   current_set_deg=opt('current_set_deg'))
 
     legs = [_leg(i, l) for i, l in enumerate(legs_in)]
 

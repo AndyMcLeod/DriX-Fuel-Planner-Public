@@ -960,6 +960,111 @@ class TestCurrent(unittest.TestCase):
         self.assertGreater(p.total_litres, 0.0)
 
 
+class TestPerLegWeather(unittest.TestCase):
+    """Wind and current belong to the leg, not the mission.
+
+    A mission runs two days at survey speed, so the wind on the bow going out
+    is not the wind coming home. Each field is None to mean "use the mission
+    Environment", which is NOT the same as zero.
+    """
+
+    def setUp(self):
+        self.m = Model()
+        self.env = Environment(wmo_sea_state=2, wind_speed_kt=20.0,
+                               wind_from_deg=0.0, current_speed_kt=2.0,
+                               current_set_deg=90.0)
+
+    def _v(self):
+        return Vessel(gondola='em2040')
+
+    def _legs(self, **out_kw):
+        return [Leg('out', 'transit', 30.0, 8.0, 0.0, **out_kw),
+                Leg('survey', 'survey', 60.0, 8.0, 90.0),
+                Leg('home', 'transit', 30.0, 8.0, 180.0)]
+
+    def test_a_leg_with_no_weather_of_its_own_uses_the_mission(self):
+        p = plan(self._legs(), self.env, self._v(), self.m)
+        for leg in p.legs:
+            self.assertAlmostEqual(leg.wind_speed_kt, 20.0, places=12)
+            self.assertAlmostEqual(leg.wind_from_deg, 0.0, places=12)
+            self.assertAlmostEqual(leg.current_speed_kt, 2.0, places=12)
+            self.assertAlmostEqual(leg.current_set_deg, 90.0, places=12)
+
+    def test_a_leg_overrides_only_what_it_sets(self):
+        """Speed and direction are independent: changing strength alone must
+        keep the mission's direction, not silently reset it to north."""
+        p = plan(self._legs(wind_speed_kt=5.0), self.env, self._v(), self.m)
+        self.assertAlmostEqual(p.legs[0].wind_speed_kt, 5.0, places=12)
+        self.assertAlmostEqual(p.legs[0].wind_from_deg, 0.0, places=12)   # inherited
+        self.assertAlmostEqual(p.legs[1].wind_speed_kt, 20.0, places=12)  # untouched
+
+    def test_zero_is_an_override_not_an_absence(self):
+        """A becalmed leg must be plannable. If 0 were read as 'unset' the leg
+        would silently inherit 20 kt."""
+        calm = plan(self._legs(wind_speed_kt=0.0, current_speed_kt=0.0),
+                    self.env, self._v(), self.m)
+        self.assertEqual(calm.legs[0].wind_speed_kt, 0.0)
+        self.assertEqual(calm.legs[0].current_speed_kt, 0.0)
+        windy = plan(self._legs(), self.env, self._v(), self.m)
+        self.assertLess(calm.legs[0].litres, windy.legs[0].litres)
+
+    def test_each_leg_is_costed_under_its_own_weather(self):
+        """The whole point: a head current out and a fair one home must not be
+        computed from one mission-wide vector."""
+        legs = [Leg('out', 'transit', 30.0, 8.0, 0.0,
+                    current_speed_kt=2.0, current_set_deg=180.0),
+                Leg('survey', 'survey', 60.0, 8.0, 90.0,
+                    current_speed_kt=0.0),
+                Leg('home', 'transit', 30.0, 8.0, 180.0,
+                    current_speed_kt=2.0, current_set_deg=180.0)]
+        p = plan(legs, Environment(wmo_sea_state=2), self._v(), self.m)
+        # Out is on 000 into a current setting 180 — dead on the bow.
+        self.assertAlmostEqual(p.legs[0].stw_kt, 10.0, places=9)
+        # Home is on 180 with the same current now astern.
+        self.assertAlmostEqual(p.legs[2].stw_kt, 6.0, places=9)
+        # The survey said 0 explicitly, so it gets no current at all.
+        self.assertAlmostEqual(p.legs[1].stw_kt, 8.0, places=9)
+        self.assertGreater(p.legs[0].litres, p.legs[2].litres)
+
+    def test_the_mission_environment_still_works_alone(self):
+        """The API's old shape must keep planning identically."""
+        legs = [Leg('out', 'transit', 30.0, 8.0, 0.0),
+                Leg('survey', 'survey', 60.0, 8.0, 90.0),
+                Leg('home', 'transit', 30.0, 8.0, 180.0)]
+        a = plan(legs, self.env, self._v(), self.m)
+        b = plan([Leg('out', 'transit', 30.0, 8.0, 0.0, wind_speed_kt=20.0,
+                      wind_from_deg=0.0, current_speed_kt=2.0, current_set_deg=90.0),
+                  Leg('survey', 'survey', 60.0, 8.0, 90.0, wind_speed_kt=20.0,
+                      wind_from_deg=0.0, current_speed_kt=2.0, current_set_deg=90.0),
+                  Leg('home', 'transit', 30.0, 8.0, 180.0, wind_speed_kt=20.0,
+                      wind_from_deg=0.0, current_speed_kt=2.0, current_set_deg=90.0)],
+                 Environment(wmo_sea_state=2), self._v(), self.m)
+        self.assertAlmostEqual(a.total_litres, b.total_litres, places=9)
+
+    def test_sea_state_stays_mission_wide(self):
+        """Deliberate: the premium has one measured anchor, and three values
+        would imply a resolution the model does not have."""
+        self.assertFalse(hasattr(Leg('x', 'transit', 1.0, 8.0), 'wmo_sea_state'))
+        p = plan(self._legs(wind_speed_kt=0.0), self.env, self._v(), self.m)
+        self.assertEqual(len({l.sea_premium for l in p.legs}), 1)
+
+    def test_the_sensitivity_rows_see_per_leg_weather(self):
+        legs = self._legs(wind_speed_kt=0.0, current_speed_kt=0.0)
+        p = plan(legs, self.env, self._v(), self.m)
+        as_planned = next(s for s in p.sensitivity if s['premium_delta'] == 0)
+        self.assertAlmostEqual(as_planned['total_litres'], p.total_litres, places=9)
+
+    def test_negative_per_leg_weather_is_refused(self):
+        for kw in ({'wind_speed_kt': -1.0}, {'current_speed_kt': -1.0}):
+            with self.assertRaises(ValueError) as cm:
+                plan(self._legs(**kw), self.env, self._v(), self.m)
+            self.assertIn('must not be negative', str(cm.exception))
+        # ...and the acceptance case, so the refusal is not vacuous.
+        p = plan(self._legs(wind_speed_kt=1.0, current_speed_kt=1.0),
+                 self.env, self._v(), self.m)
+        self.assertAlmostEqual(p.legs[0].wind_speed_kt, 1.0, places=12)
+
+
 class TestLoiter(unittest.TestCase):
     """Delays imposed on a leg, charged at the gondola's idle burn.
 

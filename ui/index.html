@@ -51,22 +51,6 @@
           <span>RPM premium</span>
           <input type="text" id="seaPremium" readonly tabindex="-1" class="readout">
         </label>
-        <label class="field">
-          <span>Wind speed <em>kt</em></span>
-          <input type="number" id="windSpeed" min="0" max="80" step="0.5" value="12">
-        </label>
-        <label class="field">
-          <span>Wind from <em>&deg;true</em></span>
-          <input type="number" id="windFrom" min="0" max="360" step="1" value="270">
-        </label>
-        <label class="field">
-          <span>Current <em>kt</em></span>
-          <input type="number" id="currentSpeed" min="0" max="20" step="0.1" value="0">
-        </label>
-        <label class="field">
-          <span>Current sets toward <em>&deg;true</em></span>
-          <input type="number" id="currentSet" min="0" max="360" step="1" value="0">
-        </label>
       </div>
     </section>
 
@@ -149,8 +133,15 @@
             <label class="field"><span>Course <em>&deg;</em></span>
               <input type="number" id="outCourse" min="0" max="360" step="1" value="90"></label>
           </div>
+          <div class="weather">
+            <span class="row-label">Weather</span>
+            <label>Wind <input type="number" id="outWindKt" min="0" max="80" step="0.5" value="12"></label>
+            <label>from <input type="number" id="outWindFrom" min="0" max="360" step="1" value="270"></label>
+            <label>Current <input type="number" id="outCurKt" min="0" max="20" step="0.1" value="0"></label>
+            <label>sets <input type="number" id="outCurSet" min="0" max="360" step="1" value="0"></label>
+          </div>
           <div class="loiter">
-            <span class="loiter-label">Loiter</span>
+            <span class="row-label">Loiter</span>
             <input type="number" id="outLoiter" min="0" step="1" value="0"
                    aria-label="Transit out loiter">
             <select id="outLoiterUnit" aria-label="Transit out loiter units">
@@ -177,8 +168,15 @@
             <div class="field"><span>Survey distance</span>
               <output class="readout" id="surTotal">&mdash;</output></div>
           </div>
+          <div class="weather">
+            <span class="row-label">Weather</span>
+            <label>Wind <input type="number" id="surWindKt" min="0" max="80" step="0.5" value="12"></label>
+            <label>from <input type="number" id="surWindFrom" min="0" max="360" step="1" value="270"></label>
+            <label>Current <input type="number" id="surCurKt" min="0" max="20" step="0.1" value="0"></label>
+            <label>sets <input type="number" id="surCurSet" min="0" max="360" step="1" value="0"></label>
+          </div>
           <div class="loiter">
-            <span class="loiter-label">Loiter</span>
+            <span class="row-label">Loiter</span>
             <input type="number" id="surLoiter" min="0" step="1" value="0"
                    aria-label="Survey loiter">
             <select id="surLoiterUnit" aria-label="Survey loiter units">
@@ -201,8 +199,15 @@
             <label class="field"><span>Course <em>&deg;</em></span>
               <input type="number" id="homeCourse" min="0" max="360" step="1" value="270"></label>
           </div>
+          <div class="weather">
+            <span class="row-label">Weather</span>
+            <label>Wind <input type="number" id="homeWindKt" min="0" max="80" step="0.5" value="12"></label>
+            <label>from <input type="number" id="homeWindFrom" min="0" max="360" step="1" value="270"></label>
+            <label>Current <input type="number" id="homeCurKt" min="0" max="20" step="0.1" value="0"></label>
+            <label>sets <input type="number" id="homeCurSet" min="0" max="360" step="1" value="0"></label>
+          </div>
           <div class="loiter">
-            <span class="loiter-label">Loiter</span>
+            <span class="row-label">Loiter</span>
             <input type="number" id="homeLoiter" min="0" step="1" value="0"
                    aria-label="Transit home loiter">
             <select id="homeLoiterUnit" aria-label="Transit home loiter units">
