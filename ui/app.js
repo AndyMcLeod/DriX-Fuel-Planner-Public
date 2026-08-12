@@ -553,7 +553,11 @@ async function openHelp() {
     try {
       const r = await fetch('/quickstart.md');
       if (!r.ok) throw new Error(`quick start unavailable (${r.status})`);
-      quickstartHtml = renderMarkdownSubset(await r.text());
+      // Drop the document's leading H1: the dialog header already says "Quick
+      // start", and rendering both puts the title on screen twice. The heading
+      // stays in the file, where a standalone document needs it.
+      const md = (await r.text()).replace(/^#[^#\n][^\n]*\n/, '');
+      quickstartHtml = renderMarkdownSubset(md);
     } catch (err) {
       // Left null so a later open retries rather than caching the failure.
       body.innerHTML = `<p>${escapeHtml(err.message)}</p>`;

@@ -205,6 +205,16 @@ class TestQuickStart(unittest.TestCase):
         self.assertIn("'/quickstart.md'", server)
         self.assertIn("ROOT / 'QUICKSTART.md'", server)
 
+    def test_the_panel_drops_the_documents_own_title(self):
+        """The dialog header already reads "Quick start"; rendering the file's
+        H1 as well put the title on screen twice. Caught by looking at a
+        screenshot — every DOM check passed, because both titles were correct
+        elements, just one too many."""
+        js = (UI / 'app.js').read_text(encoding='utf-8')
+        self.assertRegex(js, r"replace\(/\^#\[\^#\\n\]\[\^\\n\]\*\\n/, ''\)")
+        # ...and the file still opens with one, for a standalone reader.
+        self.assertTrue(self.DOC.read_text(encoding='utf-8').startswith('# '))
+
     def test_the_ui_has_a_help_button_that_fetches_it(self):
         html = (UI / 'index.html').read_text(encoding='utf-8')
         js = (UI / 'app.js').read_text(encoding='utf-8')
