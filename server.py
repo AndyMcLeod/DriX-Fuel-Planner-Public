@@ -154,7 +154,9 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
                    wind_speed_kt=opt('wind_speed_kt'),
                    wind_from_deg=opt('wind_from_deg'),
                    current_speed_kt=opt('current_speed_kt'),
-                   current_set_deg=opt('current_set_deg'))
+                   current_set_deg=opt('current_set_deg'),
+                   wmo_sea_state=(int(l['wmo_sea_state'])
+                                  if l.get('wmo_sea_state') not in (None, '') else None))
 
     legs = [_leg(i, l) for i, l in enumerate(legs_in)]
 

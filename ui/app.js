@@ -20,15 +20,21 @@ async function boot() {
     return;
   }
 
-  const sea = $('seaState');
-  MODEL.sea_state_premium.table.forEach((row) => {
-    const o = document.createElement('option');
-    o.value = String(row.wmo);
-    o.textContent = `${row.wmo} — ${row.label} (${row.hs_m} m)`;
-    o.dataset.premium = String(row.premium);
-    sea.appendChild(o);
+  // One sea-state select per leg. Shorter option text than the old single
+  // control carried — these sit in a compact row, and the significant wave
+  // height is in the quick start rather than repeated three times.
+  LEG_PREFIXES.forEach((p) => {
+    const sel = $(p + 'Sea');
+    MODEL.sea_state_premium.table.forEach((row) => {
+      const o = document.createElement('option');
+      o.value = String(row.wmo);
+      o.textContent = `${row.wmo} — ${row.label}`;
+      o.dataset.premium = String(row.premium);
+      sel.appendChild(o);
+    });
+    sel.value = '2';
+    sel.addEventListener('change', onSeaChange);
   });
-  sea.value = '2';
 
   const gon = $('gondola');
   const gopts = MODEL.gondolas ? MODEL.gondolas.options : {};
@@ -55,7 +61,6 @@ async function boot() {
 
   $('reserve').value = String(MODEL.reserve.default_fraction * 100);
 
-  sea.addEventListener('change', onSeaChange);
   cap.addEventListener('change', () => {
     if (cap.value !== 'custom') $('capacity').value = Number(cap.value).toFixed(1);
     refreshDerived();
@@ -130,9 +135,12 @@ function renderWaypoints() {
 }
 
 function onSeaChange() {
-  const opt = $('seaState').selectedOptions[0];
-  const p = Number(opt.dataset.premium);
-  $('seaPremium').value = signedPct(p) + ' RPM';
+  // Each leg shows the premium its OWN sea state implies, beside the select,
+  // so the cost of building weather on the survey is visible before planning.
+  LEG_PREFIXES.forEach((p) => {
+    const opt = $(p + 'Sea').selectedOptions[0];
+    $(p + 'SeaPrem').textContent = opt ? signedPct(Number(opt.dataset.premium)) + ' RPM' : '';
+  });
   refreshDerived();
 }
 
@@ -214,8 +222,9 @@ function refreshDerived() {
 // ------------------------------------------------------------------ request
 function buildBody() {
   return {
-    // Sea state stays mission-wide; wind and current are per leg, below.
-    environment: { wmo_sea_state: Number($('seaState').value) },
+    // Every environmental field is per leg now. What is sent here is only the
+    // fallback for a caller that omits them; the UI never does.
+    environment: {},
     vessel: {
       capacity_l: Number($('capacity').value),
       reserve_fraction: Number($('reserve').value) / 100,
@@ -486,6 +495,7 @@ const LEG_PREFIXES = ['out', 'sur', 'home'];
 
 function legWeather(p) {
   return {
+    wmo_sea_state: Number($(p + 'Sea').value),
     wind_speed_kt: Number($(p + 'WindKt').value) || 0,
     wind_from_deg: Number($(p + 'WindFrom').value) || 0,
     current_speed_kt: Number($(p + 'CurKt').value) || 0,

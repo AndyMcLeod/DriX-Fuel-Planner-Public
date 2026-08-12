@@ -149,6 +149,13 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   font-size: .74rem; color: var(--ink-soft);
 }
 .weather input { width: 4rem; padding: .3rem .4rem; font-size: .82rem; }
+.weather select { width: auto; padding: .3rem .4rem; font-size: .82rem; }
+/* The premium the leg's own sea state implies, so the cost of a building sea
+   is visible before planning rather than only in the results table. */
+.wx-prem {
+  font-size: .74rem; color: var(--warn); font-variant-numeric: tabular-nums;
+  margin-left: -.15rem;
+}
 .loiter input { width: 4.5rem; }
 .loiter select { width: auto; }
 .loiter input, .loiter select { padding: .3rem .4rem; font-size: .82rem; }

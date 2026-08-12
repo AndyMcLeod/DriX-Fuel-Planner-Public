@@ -214,17 +214,18 @@ class Leg:
     wind_from_deg: float | None = None
     current_speed_kt: float | None = None
     current_set_deg: float | None = None
+    # Sea state is per-leg too (Andy, 2026-08-11). It was held back on the
+    # grounds that the premium rests on a single measured anchor — but that is
+    # an argument about how much the DIAL can be trusted, not about whether it
+    # should be one number for two days. A survey flown into a building sea is
+    # an ordinary mission, and averaging it away helped nobody.
+    wmo_sea_state: int | None = None
 
     def environment(self, env: 'Environment') -> 'Environment':
-        """The mission environment with this leg's own weather laid over it.
-
-        Sea state is deliberately NOT per-leg: it drives an assumed premium
-        with a single measured anchor behind it, and giving it three values
-        would imply a resolution the model does not have.
-        """
+        """The mission environment with this leg's own weather laid over it."""
         pick = lambda mine, theirs: theirs if mine is None else mine  # noqa: E731
         return Environment(
-            wmo_sea_state=env.wmo_sea_state,
+            wmo_sea_state=pick(self.wmo_sea_state, env.wmo_sea_state),
             wind_speed_kt=pick(self.wind_speed_kt, env.wind_speed_kt),
             wind_from_deg=pick(self.wind_from_deg, env.wind_from_deg),
             current_speed_kt=pick(self.current_speed_kt, env.current_speed_kt),
@@ -260,6 +261,8 @@ class Leg:
             errs.append(f'{self.name}: wind speed must not be negative')
         if self.current_speed_kt is not None and self.current_speed_kt < 0:
             errs.append(f'{self.name}: current speed must not be negative')
+        if self.wmo_sea_state is not None and self.wmo_sea_state < 0:
+            errs.append(f'{self.name}: sea state must not be negative')
         if self.kind not in ('transit', 'survey'):
             errs.append(f'{self.name}: kind must be "transit" or "survey"')
         if self.lines is not None:
@@ -533,6 +536,7 @@ class LegResult:
     wind_from_deg: float = 0.0
     current_speed_kt: float = 0.0
     current_set_deg: float = 0.0
+    wmo_sea_state: int = 0
     # -- Loiter: time held on station at the END of this leg, making no way.
     # `hours`, `litres`, `fuel_rate_lph` and `nm_per_l` above all remain
     # UNDERWAY quantities, so `litres == fuel_rate_lph * hours` still holds and
@@ -777,6 +781,7 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
         extrapolated=extrapolated, notes=notes,
         wind_speed_kt=env.wind_speed_kt, wind_from_deg=env.wind_from_deg,
         current_speed_kt=env.current_speed_kt, current_set_deg=env.current_set_deg,
+        wmo_sea_state=env.wmo_sea_state,
         loiter_hours=loiter_h, loiter_litres=loiter_l, loiter_lph=loiter_lph,
         loiter_measured=loiter_measured, total_litres=litres + loiter_l,
         lines=leg.lines, line_length_nm=leg.line_length_nm,

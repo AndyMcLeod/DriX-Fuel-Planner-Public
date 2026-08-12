@@ -145,16 +145,18 @@ they are for.
 ## Weather is per leg
 
 A mission runs two days at survey speed, so the wind on the bow going out is not
-the wind coming home. Every leg takes its own **`wind_speed_kt`**,
-**`wind_from_deg`**, **`current_speed_kt`** and **`current_set_deg`**, and the UI
-puts all four on each leg card.
+the wind coming home. Every leg takes its own **`wmo_sea_state`**,
+**`wind_speed_kt`**, **`wind_from_deg`**, **`current_speed_kt`** and
+**`current_set_deg`**, and the UI puts all five on each leg card with the
+sea-state premium shown beside the selector.
 
 Each is optional and independent. **Omit one and the leg uses the mission
 `environment`; set it to 0 and the leg is becalmed** — those are different
-things. Setting a speed alone keeps the mission's direction.
+things, and `0` is a real sea-state code as well as a real wind speed. Setting a
+speed alone keeps the mission's direction.
 
-**Sea state stays mission-wide.** It drives an assumed premium with one measured
-anchor behind it; three values would imply a resolution the model does not have.
+`environment` remains on the API as the fallback for callers that omit per-leg
+values. The UI no longer sends one.
 
 The effect is not small. A symmetric 25 NM out-and-back at 7 kt, with 25 kt on
 the nose and 2 kt of foul tide outbound against 5 kt astern and the same tide

@@ -40,19 +40,6 @@
   <!-- ------------------------------------------------------------ inputs -->
   <form id="planForm" class="panel inputs" autocomplete="off">
 
-    <section class="card">
-      <h2>Environment</h2>
-      <div class="grid2">
-        <label class="field">
-          <span>Sea state (WMO)</span>
-          <select id="seaState" name="seaState"></select>
-        </label>
-        <label class="field">
-          <span>RPM premium</span>
-          <input type="text" id="seaPremium" readonly tabindex="-1" class="readout">
-        </label>
-      </div>
-    </section>
 
     <section class="card">
       <h2>Vessel</h2>
@@ -135,6 +122,8 @@
           </div>
           <div class="weather">
             <span class="row-label">Weather</span>
+            <label>Sea <select id="outSea"></select></label>
+            <span class="wx-prem" id="outSeaPrem"></span>
             <label>Wind <input type="number" id="outWindKt" min="0" max="80" step="0.5" value="12"></label>
             <label>from <input type="number" id="outWindFrom" min="0" max="360" step="1" value="270"></label>
             <label>Current <input type="number" id="outCurKt" min="0" max="20" step="0.1" value="0"></label>
@@ -170,6 +159,8 @@
           </div>
           <div class="weather">
             <span class="row-label">Weather</span>
+            <label>Sea <select id="surSea"></select></label>
+            <span class="wx-prem" id="surSeaPrem"></span>
             <label>Wind <input type="number" id="surWindKt" min="0" max="80" step="0.5" value="12"></label>
             <label>from <input type="number" id="surWindFrom" min="0" max="360" step="1" value="270"></label>
             <label>Current <input type="number" id="surCurKt" min="0" max="20" step="0.1" value="0"></label>
@@ -201,6 +192,8 @@
           </div>
           <div class="weather">
             <span class="row-label">Weather</span>
+            <label>Sea <select id="homeSea"></select></label>
+            <span class="wx-prem" id="homeSeaPrem"></span>
             <label>Wind <input type="number" id="homeWindKt" min="0" max="80" step="0.5" value="12"></label>
             <label>from <input type="number" id="homeWindFrom" min="0" max="360" step="1" value="270"></label>
             <label>Current <input type="number" id="homeCurKt" min="0" max="20" step="0.1" value="0"></label>

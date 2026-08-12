@@ -246,9 +246,20 @@ below — premiums, current, notes — sees the same thing and none can accident
 read the mission-wide value. `LegResult` reports the resolved four, so a plan can
 be read back without the `Leg`s that produced it.
 
-**Sea state stays mission-wide, deliberately.** It drives an assumed premium with
-a single measured anchor behind it; three values would imply a resolution the
-model does not have. A test pins that.
+**Sea state is per-leg too**, added straight after (Andy). It was held back on
+the grounds that the premium rests on a single measured anchor — **that argument
+was wrong and is retracted**. It is about how far the DIAL can be trusted, not
+about whether it should be one number for two days; a survey flown into a
+building sea is an ordinary mission, and averaging it away helped nobody. `0` is
+a real WMO code, so the `is None` test matters here more than anywhere: reading
+it as "unset" would give a glassy leg the mission's sea 5.
+
+**With sea state gone from it, the Environment card had nothing left and was
+removed.** Each leg's weather row carries its own sea-state select with the
+premium it implies beside it, so the cost of a building sea is visible before
+planning rather than only in the results table. `environment` still exists on
+the API as the fallback for a caller that omits per-leg values; the UI now sends
+`{}`.
 
 **Absent means old behaviour**, exactly: a plan with no per-leg weather
 reproduces the mission-wide answer, and a plan setting every leg to the mission's

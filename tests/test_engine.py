@@ -1041,12 +1041,30 @@ class TestPerLegWeather(unittest.TestCase):
                  Environment(wmo_sea_state=2), self._v(), self.m)
         self.assertAlmostEqual(a.total_litres, b.total_litres, places=9)
 
-    def test_sea_state_stays_mission_wide(self):
-        """Deliberate: the premium has one measured anchor, and three values
-        would imply a resolution the model does not have."""
-        self.assertFalse(hasattr(Leg('x', 'transit', 1.0, 8.0), 'wmo_sea_state'))
-        p = plan(self._legs(wind_speed_kt=0.0), self.env, self._v(), self.m)
-        self.assertEqual(len({l.sea_premium for l in p.legs}), 1)
+    def test_sea_state_is_per_leg_too(self):
+        """Held back at first on the grounds that the premium rests on a single
+        anchor — but that is about how far the dial can be trusted, not about
+        whether it should be one number for two days. A survey flown into a
+        building sea is an ordinary mission."""
+        legs = [Leg('out', 'transit', 30.0, 8.0, 0.0, wmo_sea_state=1),
+                Leg('survey', 'survey', 60.0, 8.0, 90.0, wmo_sea_state=4),
+                Leg('home', 'transit', 30.0, 8.0, 180.0)]
+        p = plan(legs, Environment(wmo_sea_state=2), self._v(), self.m)
+        self.assertEqual([l.wmo_sea_state for l in p.legs], [1, 4, 2])
+        # A rising sea costs more RPM, and each leg carries its own premium.
+        self.assertLess(p.legs[0].sea_premium, p.legs[2].sea_premium)
+        self.assertLess(p.legs[2].sea_premium, p.legs[1].sea_premium)
+        self.assertEqual(len({l.sea_premium for l in p.legs}), 3)
+
+    def test_a_calm_sea_state_of_zero_is_an_override(self):
+        """0 is a real WMO code, so it must not be read as "unset"."""
+        legs = [Leg('out', 'transit', 30.0, 8.0, 0.0, wmo_sea_state=0),
+                Leg('survey', 'survey', 60.0, 8.0, 90.0),
+                Leg('home', 'transit', 30.0, 8.0, 180.0)]
+        p = plan(legs, Environment(wmo_sea_state=5), self._v(), self.m)
+        self.assertEqual(p.legs[0].wmo_sea_state, 0)
+        self.assertEqual(p.legs[1].wmo_sea_state, 5)
+        self.assertLess(p.legs[0].sea_premium, p.legs[1].sea_premium)
 
     def test_the_sensitivity_rows_see_per_leg_weather(self):
         legs = self._legs(wind_speed_kt=0.0, current_speed_kt=0.0)
