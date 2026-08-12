@@ -270,12 +270,19 @@ against 5 kt astern and the same tide fair coming home turns a symmetric
 25 NM/25 NM transit pair into **31.8 L out and 5.7 L home** — and flags both, one
 above the fitted RPM window and one below it.
 
-**In the UI** the Environment card keeps only sea state. The rose draws one
+**In the UI** the Environment card is GONE — sea state followed the wind and
+current onto the legs the same day (the paragraph here that said the card "keeps
+only sea state" outlived that by hours; review caught it). The rose draws one
 arrow per DISTINCT vector, tagged with the legs sharing it, and collapses back to
 the old single pair when all three agree. Each leg line is coloured by ITS OWN
 wind. The `Current` tile reports one value only when every leg agrees, otherwise
 the range and "varies by leg" — averaging three forecasts into one figure is
-exactly the quiet blending this planner exists to avoid.
+exactly the quiet blending this planner exists to avoid. Disagreement is judged
+**per family** (`windsVary`/`currentsVary`), never as an aggregate count: the
+first version's `winds + currents > 2` let exactly two winds pass untagged with
+one leg's figure presented at the centre as the mission's. And a slack current
+carries no direction, so the tile keys 0 kt as `slack` whatever the set box
+says — both found in review.
 
 **The arrow tags had to join the label nudger.** With three forecasts a wind tag
 and a current tag can land on the same bearing, and they did. `.wx-label` now
@@ -343,6 +350,84 @@ bearing there would be exactly the trap the field naming exists to avoid. Shown
 at zero as "0.0 kt / slack", same reasoning as the Loiter tile, and left
 unstyled — a current is a condition, not a warning.
 
+## The 2026-08-12 adversarial review — 28 confirmed findings, all fixed
+
+A five-reviewer fan-out (engine / server / UI / tests / docs) with adversarial
+verification of every claim: 28 confirmed, 0 refuted, all fixed the same day
+and each fix mutation-checked. The ones worth knowing about when reading code:
+
+- **`plan()` could CRASH**: the convexity note divided by a fuel rate the EM712
+  law clamps to zero — any survey below ~5 kt in wind was a ZeroDivisionError
+  served as a 500. Guarded; the clamp note is the message in that regime.
+- **`max_survey_lines`' cap exit lied**: `hi > cap` returned `lines=cap,
+  completes=True` without ever asking `fits(cap)` — a mission whose true max
+  was 20 was told 30 fit, 52 L past the floor. The exit now verifies the cap
+  and bisects honestly below it when it does not fit.
+- **The wind-vs-sea sanity warning was dead** for the UI (it read the mission
+  Environment, which the UI sends empty since weather went per-leg). Per-leg
+  now, naming the odd legs.
+- **`Environment.validate` never checked `wmo_sea_state`**, and the premium
+  table's "above the table, hold the top value" fallback cannot tell above
+  from below — a `-1` typo silently planned the whole mission at the TOP
+  premium. Rejected now, mirroring `Leg.validate`.
+- **Transport hygiene**: `json.loads` ADMITS `NaN`/`Infinity` literals and
+  `NaN <= 0` is False, so a NaN speed passed validation and died at response
+  serialization; a JSON-array body escaped `do_POST`'s except-net and dropped
+  the connection with no response; `int(lines)` truncated 12.5 to 12 silently;
+  both waypoint spellings at once silently preferred one where the engine's
+  own rule is to refuse. All four fixed at the seam, with `tests/test_server.py`
+  new — **the HTTP parser had no tests at all**.
+- **`waypoints: []` now really means "no waypoints"**: `... or fallback` had
+  quietly closed the documented escape hatch. The UI sends `null` for a blank
+  box (defaults), `[]` on the wire means none.
+- **The rose judged disagreement as an aggregate**: `winds + currents > 2` let
+  exactly two winds pass untagged with one leg's figure at the centre as "the"
+  wind. Per family now (`windsVary`/`currentsVary`). And the Current tile keys
+  0 kt as `slack` whatever the set box holds, so an all-slack mission cannot
+  read "varies by leg".
+- **`server.py` carried the repo's THIRD hard-coded reserve floor**, unread by
+  the agreement test. It asks the model now — and the test that pins this had
+  its own lesson: the first version checked one line, and a mutant hardcoding
+  0.25 one line higher SURVIVED as behaviourally equivalent *at today's policy
+  value*. Equivalent-today is exactly the drift the guard exists for; the test
+  now reads the whole parser source.
+- **Doc drift**: README still quoted 211/175 L and 428/347 NM — 15%-floor
+  figures retired three days ago; QUICKSTART described the removed Environment
+  card; `tests/test_ui.py`'s leg regex matched the `.legs` CONTAINER as the
+  first leg and produced the right answer by coincidence.
+
+201 tests (was 183). The near-misses to carry forward: a solver's cap path had
+no test because no test passed a cap, and the HTTP seam had none because the
+suite only ever imported `engine`.
+
+## Loiter moved to the START of its leg; home marks added (2026-08-12)
+
+Andy's report: "when I add 4 hours to a straightforward loiter on the return to
+home, I do not get 4 hours later arrival." Reproduced exactly — under the old
+end-of-leg convention a hold on transit home was a hold AFTER arriving, so
+`total_hours` moved and **not one mark did**. The fix and its consequences:
+
+- **The hold now sits at the start of its leg.** One rule everywhere: a hold
+  delays its own leg's crossings and everything after. Launch delay moves the
+  outbound waypoints; a hold on the way home arrives home late.
+- **`_mission_marks.add()` carries the hold** — `start_hours + loiter_hours +
+  into_nm/speed`, and the burn line carries `loiter_litres` the same way.
+  Dropping either is the reported bug restored; both mutations are killed.
+- **`survey_arrival` is the one before-the-hold mark** (`after_hold=False`):
+  the vehicle arrives, then waits. `home_departure` is the opposite — it names
+  the vehicle leaving, so it is stamped after any launch hold, with the hold's
+  fuel already burned.
+- **`home_departure` and `home_arrival` bracket every mission** (transit-only
+  ones included), and `home_arrival.elapsed_hours == total_hours` is an
+  identity a test pins — it is what keeps the marks table and the "Back
+  alongside" readout agreeing. Every marks consumer that counted 6 now counts 8.
+- The rose hold-dot moved to the **inboard** end of the leg line (r=18) to
+  match, clear of the centre text.
+
+Five mutants killed; the reported scenario is a named test. Verified live:
+4 h on transit home moves inbound 26 km T+20.14→24.14, inbound 13 km
+T+21.14→25.14, Back alongside T+22.14→26.14.
+
 ## Loiter: delays imposed on a leg (2026-08-11)
 
 `Leg.loiter_hours` — time held on station making no way, charged at the
@@ -355,12 +440,15 @@ pressing **Plan mission** is the replan.
 never been used.** `gondolas.options.em2040.loiter.lph = 0.95` — 20.8 h of
 observed idle at ~1005 rpm. A 2 h hold is 1.90 L, verified live.
 
-**Held at the END of its leg.** That is the one part of this that is a
-convention rather than a measurement, and it is chosen because it leaves the
-leg's own distance waypoints where they were: a hold on the outbound transit
-does not move the outbound 13 km mark, but shifts everything after it by the
-delay. Two tests pin exactly that, and a mutation moving the hold to the start
-is killed.
+**Held at the START of its leg** — changed 2026-08-12 from the end, and the
+change was a bug fix, not taste. Andy reported that 4 h of loiter on the return
+leg did not arrive 4 h later, and he was right: "end of the leg" on transit
+home meant holding AFTER arriving, so the finish clock moved and not one mark
+did. At the start, every leg reads operationally — launch delay outbound, hold
+before the first line on survey, offshore hold before running in — and one rule
+falls out: **a hold delays its own leg's crossings and everything after**. The
+mark times and burns carry the hold via `add()`'s offset; a mutation restoring
+the old behaviour is killed by four tests, including one named for the report.
 
 **Underway and held figures stay separate on `LegResult`.** `hours`, `litres`,
 `fuel_rate_lph` and `nm_per_l` remain **underway** quantities, so
@@ -380,10 +468,11 @@ seaway has never been measured, so the hold carries **no sea-state premium** —
 stated in the leg note rather than silently assumed away. Dropping that sentence
 is a killed mutation.
 
-**On the compass rose**, a held leg gets an amber dot at the **outboard end of
-its own course line** — where the engine takes the hold — and the duration rides
-that leg's label in amber (`out 45m`, `survey 2h30`). Compact form via
-`hmShort()`; the tile and the notes keep the long one.
+**On the compass rose**, a held leg gets an amber dot at the **inboard end of
+its own course line** — the hold sits at the start of the leg since the
+2026-08-12 fix, and the dot moved with it — and the duration rides that leg's
+label in amber (`out 45m`, `survey 2h30`). Compact form via `hmShort()`; the
+tile and the notes keep the long one.
 
 **A hold is deliberately NOT drawn as a direction.** It has no bearing, and an
 arrow would be inventing geometry the delay does not have. The rose reads the
@@ -633,11 +722,17 @@ undated `02:00` is ambiguous by a day or more.
 
 `marks` are the mission's timed callouts, sorted chronologically, each reporting
 fuel burned and the gauge reading there. `kind` is `'range'` (a fixed distance
-from home, `outbound`/`inbound`, one pair per radius — 7 and 26 km by default) or `'phase'` (`survey_arrival`, the start of
-the **first** survey leg, and `survey_departure`, the end of the **last**).
+from home, `outbound`/`inbound`, one pair per radius — 13 and 26 km by default)
+or `'phase'`: `home_departure` (the first leg starts **making way**, after any
+launch hold), `survey_arrival` (the start of the **first** survey leg, before
+its own hold), `survey_departure` (the end of the **last**), and `home_arrival`
+(the end of the mission — **always equal to `total_hours`**, an identity a test
+pins so the marks table and the "Back alongside" readout cannot disagree; the
+home marks were added 2026-08-12 with the loiter-placement fix).
 Arrival-to-departure is time on task, so a reposition between two survey
 patches sits *inside* the span rather than splitting it. Sorting happens once at
-the end of `_mission_marks`, so a new mark can be added anywhere in that
+the end of `_mission_marks` (stable, so same-time marks keep insertion order:
+departure → survey → arrival), and a new mark can be added anywhere in that
 function without minding order.
 
 **"Distance from home" means distance along the planned track** — run made good

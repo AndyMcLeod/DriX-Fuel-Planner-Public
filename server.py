@@ -83,27 +83,33 @@ def _parse_start_time(raw) -> dt.datetime | None:
                      f'(2026-08-11T06:30) or HH:MM')
 
 
+def _reject_nonfinite(token: str):
+    """json.loads parse_constant hook: refuse NaN/Infinity/-Infinity."""
+    raise ValueError(f'{token} is not a valid number')
+
+
 def _parse_waypoints(raw, unit: str) -> tuple[float, ...]:
     """Mission waypoints: a list, a single number, or "13, 26".
 
-    Absent or empty falls back to the defaults rather than meaning "no
-    waypoints" — an operator who clears the box wants the standard callouts
-    back, not silence. Passing an explicit empty list is the way to ask for
-    none.
+    Absent (null) or a BLANK STRING falls back to the defaults — an operator
+    who clears the box wants the standard callouts back, not silence, and the
+    UI sends null for a blank box. An explicit empty LIST asks for no
+    waypoints at all, and is honoured: review found the old `... or fallback`
+    coercion quietly turned [] back into the defaults, so the escape hatch
+    this docstring promised did not exist.
 
     The defaults come from `default_waypoints(unit)`, so clearing the box in NM
     restores the same physical radii the km defaults describe, not the same
     numbers read as NM.
     """
-    fallback = default_waypoints(unit)
     if raw is None:
-        return fallback
+        return default_waypoints(unit)
     if isinstance(raw, (int, float)):
         return (float(raw),)
     if isinstance(raw, str):
         parts = raw.replace(',', ' ').split()
-        return tuple(float(p) for p in parts) or fallback
-    return tuple(float(x) for x in raw) or fallback
+        return tuple(float(p) for p in parts) or default_waypoints(unit)
+    return tuple(float(x) for x in raw)
 
 
 def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
@@ -121,9 +127,14 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         current_set_deg=float(env_in.get('current_set_deg', 0.0)),
     )
     ves_in = body.get('vessel') or {}
+    # The reserve default comes from the MODEL, not a literal: review found
+    # this line carrying the repo's third hard-coded copy of the floor, which
+    # the reserve-agreement test never read. Two copies are pinned together by
+    # a test; a third that drifts plans API callers to a different floor.
+    reserve_default = get_model().data['reserve']['default_fraction']
     vessel = Vessel(
         capacity_l=float(ves_in.get('capacity_l', 250.0)),
-        reserve_fraction=float(ves_in.get('reserve_fraction', 0.25)),
+        reserve_fraction=float(ves_in.get('reserve_fraction', reserve_default)),
         start_level_fraction=float(ves_in.get('start_level_fraction', 1.0)),
         gondola=str(ves_in.get('gondola', 'em712')),
     )
@@ -148,7 +159,13 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
                    distance_nm=float(l.get('distance_nm', 0.0)),
                    speed_kt=float(l.get('speed_kt', 6.0)),
                    course_deg=float(l.get('course_deg', 0.0)),
-                   lines=int(lines) if lines not in (None, '') else None,
+                   # Not int(): that silently truncated 12.5 lines to 12 and
+                   # made the engine's own whole-number guard unreachable over
+                   # HTTP (found in review). An integral float becomes the int
+                   # the engine wants; anything fractional is passed through so
+                   # Leg.validate rejects it with its own message.
+                   lines=(int(float(lines)) if float(lines).is_integer()
+                          else float(lines)) if lines not in (None, '') else None,
                    line_length_nm=float(length) if length not in (None, '') else None,
                    loiter_hours=float(loiter) if loiter not in (None, '') else 0.0,
                    wind_speed_kt=opt('wind_speed_kt'),
@@ -170,7 +187,14 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
     # it is not this shim's job to second-guess it.
     unit = str(body.get('waypoint_unit') or DEFAULT_WAYPOINT_UNIT)
     raw = body.get('waypoints')
-    if raw is None and 'home_marks_km' in body:
+    if 'home_marks_km' in body:
+        # Both spellings at once is a contradiction, and the ENGINE'S rule is
+        # that it raises rather than resolving by precedence — this shim was
+        # quietly preferring `waypoints` and never letting the engine see the
+        # clash (found in review). Same words as the engine's error, so the
+        # client reads one message whichever layer catches it.
+        if raw is not None:
+            raise ValueError('pass waypoints or home_marks_km, not both')
         raw, unit = body['home_marks_km'], 'km'
     waypoints = _parse_waypoints(raw, unit)
     return legs, env, vessel, override, start_time, waypoints, unit
@@ -226,10 +250,22 @@ class Handler(BaseHTTPRequestHandler):
             self._error(413, 'request body too large')
             return None
         try:
-            return json.loads(self.rfile.read(length).decode('utf-8'))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            # parse_constant fires only for the non-standard NaN/Infinity
+            # literals, which json.loads otherwise ADMITS. A NaN speed sails
+            # past every validator (NaN <= 0 is False) and dies at response
+            # serialization with an error naming no input — found in review.
+            body = json.loads(self.rfile.read(length).decode('utf-8'),
+                              parse_constant=_reject_nonfinite)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self._error(400, f'malformed JSON: {exc}')
             return None
+        # A valid-JSON body whose top level is a list or string raised
+        # AttributeError past do_POST's (TypeError, ValueError) net and closed
+        # the connection with no response at all — found in review.
+        if not isinstance(body, dict):
+            self._error(400, 'request body must be a JSON object')
+            return None
+        return body
 
     # -- routes ------------------------------------------------------------ #
 

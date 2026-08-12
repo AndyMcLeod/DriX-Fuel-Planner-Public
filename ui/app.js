@@ -249,9 +249,14 @@ function buildBody() {
     // Blank start time is sent as null: elapsed hours only, no clock.
     start_time: $('startTime').value || null,
     // Comma- or space-separated distances, e.g. "13, 26", in the selected
-    // unit. Blank falls back to the model defaults server-side rather than
-    // silently meaning "none".
-    waypoints: ($('waypoints').value.match(/[\d.]+/g) || []).map(Number),
+    // unit. A BLANK box is sent as null — "give me the defaults" — never as an
+    // empty list: on the wire [] means "no waypoints at all", and sending it
+    // for a cleared box would silence the standard callouts instead of
+    // restoring them.
+    waypoints: (() => {
+      const v = ($('waypoints').value.match(/[\d.]+/g) || []).map(Number);
+      return v.length ? v : null;
+    })(),
     waypoint_unit: $('waypointUnit').value,
   };
 }
@@ -308,8 +313,14 @@ async function doMaxSurvey() {
         refreshDerived();
         filled = ' Lines set to <strong>' + L.lines + '</strong> — edit it to plan fewer.';
       }
+      // L.lines can be 0 while nm > 0: some survey DISTANCE fits, just not one
+      // whole line of the length asked for. The old message here blamed the
+      // transits ("the transits alone reach the floor"), which in this state
+      // is provably false — nm > 0 means the transits hold with room to spare.
+      // Blame the line length, and say how much distance IS available.
       const head = L.lines === 0
-        ? '<strong>Not even one line fits</strong> — the transits alone reach the floor.'
+        ? `<strong>Not even one ${fmt(L.line_length_nm, 1)} NM line fits</strong> — `
+          + `the fuel allows only ${fmt(nm, 1)} NM of survey. Shorten the lines.`
         : `Fuel allows <strong>${L.lines} lines</strong> of ${fmt(L.line_length_nm, 1)} NM `
           + `— ${fmt(L.distance_nm, 1)} NM of survey.`;
       // The engine's note compares the answer against the count that was
@@ -594,8 +605,15 @@ function closeHelp() {
 
 /** The Current tile, summarising what each leg was actually planned under. */
 function currentTile(legs) {
-  const vecs = [...new Set(legs.map(
-    (l) => `${Number(l.current_speed_kt).toFixed(2)}|${Number(l.current_set_deg).toFixed(0)}`))];
+  // A slack current has no direction worth distinguishing: 0 kt setting 090
+  // and 0 kt setting 270 are the same water. Keying on the set regardless made
+  // an all-slack mission with a leftover set value read "varies by leg" in
+  // amber — found in review.
+  const vecs = [...new Set(legs.map((l) => {
+    const kt = Number(l.current_speed_kt);
+    return kt > 0
+      ? `${kt.toFixed(2)}|${Number(l.current_set_deg).toFixed(0)}` : 'slack';
+  }))];
   if (vecs.length === 1) {
     const kt = Number(legs[0].current_speed_kt);
     return tile('Current', `${fmt(kt, 1)} kt`,
@@ -691,15 +709,16 @@ function drawRose() {
             stroke-width="2.5" stroke-linecap="round"/>`;
     // A hold has no bearing, so it is NOT drawn as a direction — that would be
     // inventing geometry the delay does not have. It is drawn where it happens:
-    // a marker at the OUTBOARD end of the leg's own line, which is where the
-    // engine takes it, and the duration rides the leg's OWN label rather than
-    // getting a text of its own. A separate text one ring inboard collided with
-    // the label it belonged to on any east-west leg — measured, not guessed.
-    //
-    // The dot stays at the line END even when the label has been pushed inward:
-    // it marks where the hold happens, not where its caption fits.
+    // a marker at the INBOARD end of the leg's own line, because the engine
+    // takes the hold at the START of the leg (the 2026-08-12 arrival-time fix
+    // moved it there from the end, and the dot moved with it). Radius 18 keeps
+    // three dots on similar courses clear of the wind/current text at centre.
+    // The duration rides the leg's OWN label rather than getting a text of its
+    // own — a separate text collided with the label it belonged to on any
+    // east-west leg; measured, not guessed.
     if (hold > 0) {
-      s += `<circle cx="${x}" cy="${y}" r="4" fill="var(--warn)"
+      const [hx, hy] = pt(c, 18);
+      s += `<circle cx="${hx}" cy="${hy}" r="4" fill="var(--warn)"
               stroke="var(--panel)" stroke-width="1"/>`;
     }
     const held = hold > 0
@@ -715,14 +734,21 @@ function drawRose() {
   // Wind arrows: one per distinct vector, blowing TOWARDS from + 180. Thinner
   // when the legs disagree, and tagged with which legs share it — an untagged
   // arrow in a mission with three forecasts would be a guess.
-  const many = winds.length + currents.length > 2;
+  //
+  // Disagreement is judged PER FAMILY, never as an aggregate: the old
+  // `winds + currents > 2` test let exactly two distinct winds (and no
+  // current) pass untagged, with the centre readout presenting one leg's wind
+  // as the mission's while the arrows showed two — found in review. Two winds
+  // disagree the moment there are two of them, whatever the currents do.
+  const windsVary = winds.length > 1;
+  const currentsVary = currents.length > 1;
   winds.forEach((w) => {
     const [sx, sy] = pt(w.deg, R - 2);
     const [ex, ey] = pt(w.deg + 180, R - 34);
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--wind)"
-            stroke-width="${winds.length > 1 ? 2 : 3}" stroke-linecap="round"
+            stroke-width="${windsVary ? 2 : 3}" stroke-linecap="round"
             marker-end="url(#arrow)"/>`;
-    if (many) {
+    if (windsVary) {
       const [tx, ty] = pt(w.deg + 180, R - 40);
       s += `<text class="wx-label" x="${tx}" y="${ty}" text-anchor="middle"
               font-size="7" fill="var(--wind)">${w.kt} kt ${w.legs.join('/')}</text>`;
@@ -736,24 +762,23 @@ function drawRose() {
     const [sx, sy] = pt(c.deg + 180, R - 2);
     const [ex, ey] = pt(c.deg, R - 34);
     s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="var(--warn)"
-            stroke-width="${currents.length > 1 ? 2 : 2.5}" stroke-linecap="round"
+            stroke-width="${currentsVary ? 2 : 2.5}" stroke-linecap="round"
             stroke-dasharray="5 3" marker-end="url(#arrowCur)"/>`;
-    if (many) {
+    if (currentsVary) {
       const [tx, ty] = pt(c.deg, R - 40);
       s += `<text class="wx-label" x="${tx}" y="${ty}" text-anchor="middle"
               font-size="7" fill="var(--warn)">${c.kt} kt ${c.legs.join('/')}</text>`;
     }
   });
 
-  // The centre readout only means anything when every leg agrees; otherwise the
-  // per-arrow tags carry it.
-  if (!many) {
-    const w = winds[0], c = currents[0];
-    if (w) s += `<text x="${cx}" y="${cy + (c ? -2 : 4)}" text-anchor="middle"
-            font-size="9" fill="var(--wind)">${w.kt} kt</text>`;
-    if (c) s += `<text x="${cx}" y="${cy + (w ? 12 : 4)}" text-anchor="middle"
-            font-size="9" fill="var(--warn)">${c.kt} kt set</text>`;
-  }
+  // Each family's centre readout appears only when that family agrees; a
+  // varying family's figures live on its arrow tags instead.
+  const wAgree = !windsVary && winds[0];
+  const cAgree = !currentsVary && currents[0];
+  if (wAgree) s += `<text x="${cx}" y="${cy + (cAgree ? -2 : 4)}" text-anchor="middle"
+          font-size="9" fill="var(--wind)">${winds[0].kt} kt</text>`;
+  if (cAgree) s += `<text x="${cx}" y="${cy + (wAgree ? 12 : 4)}" text-anchor="middle"
+          font-size="9" fill="var(--warn)">${currents[0].kt} kt set</text>`;
 
   $('rose').innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
       markerWidth="5" markerHeight="5" orient="auto-start-reverse">

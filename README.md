@@ -122,9 +122,11 @@ they are for.
   `gauge_profile.reading = "A"` in `model.json`. The gauge is a *profile*, not a
   scalar: the measured 72–86% band stays at 2.06 L/point and the other 86 points
   carry the balance of the 250 L drawing volume, ~2.57. Mission fuel and the
-  predicted needle are integrals over it. **211 L** to the floor, against 175 L
-  on the conservative reading (B), which is one segment on the same code path.
-  Set `reading` to `"B"` to plan on the measured band alone.
+  predicted needle are integrals over it. **185.7 L** to the 25% floor, against
+  154.5 L on the conservative reading (B), which is one segment on the same code
+  path. Set `reading` to `"B"` to plan on the measured band alone. (Review
+  caught this paragraph still quoting 211/175 L — figures from the retired 15%
+  floor.)
 
   This is an **inference, not a measurement**, and it moved planning fuel 21% in
   the unsafe direction. It also moved what the planner depends on: a +20% error
@@ -138,9 +140,10 @@ they are for.
   but the needle does not: the banner goes red and reads **BREACHES ON THE
   GAUGE**, naming both bases. `within_reserve` keeps its capacity-only meaning.
   Spare range and time are quoted against `binding_margin_*` (whichever floor
-  binds first), and **`max_survey_length` solves to that same floor** (428 NM on
-  the default vessel under reading A; 347 NM under B). A solver whose answer the
-  planner then flags red would be a bug, and a test asserts it never happens.
+  binds first), and **`max_survey_length` solves to that same floor** (370.9 NM
+  on the default vessel under reading A at sea state 2; 301.8 NM under B). A
+  solver whose answer the planner then flags red would be a bug, and a test
+  asserts it never happens.
 
 ## Weather is per leg
 
@@ -206,9 +209,12 @@ two hours of clock.
 
 Three things worth knowing:
 
-- **The hold is taken at the end of its leg.** A delay on the outbound transit
-  therefore leaves that leg's own outbound waypoint where it was and shifts
-  everything after it. That placement is a convention, not a measurement.
+- **The hold is taken at the start of its leg.** One rule follows: a hold
+  delays that leg's own crossings and everything after it — a launch delay
+  moves the outbound waypoints, a hold on the way home arrives home late. (It
+  was originally taken at the end, which read as "hold after arriving" on the
+  return leg and moved nothing.) The placement is still a convention, not a
+  measurement.
 - **Underway figures stay underway.** A leg's `hours`, `litres`,
   `fuel_rate_lph` and `nm_per_l` describe making way, so `litres = rate × hours`
   still holds; `total_litres` and `end_hours − start_hours` are what the leg
@@ -449,10 +455,12 @@ read. Two kinds, distinguished by `kind`:
 
 | `kind` | `phase` | Where it sits |
 |---|---|---|
+| `phase` | `home_departure` | the first leg starts **making way** — after any launch hold |
 | `range` | `outbound` | each radius, on the first leg |
-| `phase` | `survey_arrival` | the start of the **first** survey leg |
+| `phase` | `survey_arrival` | the start of the **first** survey leg, before its own hold |
 | `phase` | `survey_departure` | the end of the **last** survey leg |
 | `range` | `inbound` | each radius, on the last leg |
+| `phase` | `home_arrival` | the end of the mission — always equal to `total_hours` |
 
 Arrival to departure is time on task: the vehicle is on the survey area from
 the moment it starts the first line until it leaves for good, so any

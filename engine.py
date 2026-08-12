@@ -198,10 +198,12 @@ class Leg:
     line_length_nm: float | None = None
     # Time held on station on this leg, making no way — a launch or recovery
     # delay, a hold for traffic, a sensor problem. Charged at the gondola's
-    # IDLE burn, and taken at the END of the leg: the distance is run, then the
-    # vehicle waits. That placement is what keeps the leg's own distance marks
-    # where they were, and it is the only part of this that is a convention
-    # rather than a measurement.
+    # IDLE burn, and taken at the START of the leg: the vehicle waits, then
+    # runs the distance. That placement is what makes a hold on the return leg
+    # delay the arrival home — the reason the end-of-leg convention this
+    # replaced was wrong — and it is still a convention, not a measurement:
+    # a real delay lands somewhere inside the leg, and this model puts the
+    # whole lump before the first mile.
     loiter_hours: float = 0.0
     # -- Weather on THIS leg. A mission runs for two days at survey speed, so
     # the wind that was on the bow going out is not the wind coming home, and a
@@ -253,7 +255,12 @@ class Leg:
         errs = []
         if self.distance_nm < 0:
             errs.append(f'{self.name}: distance must not be negative')
-        if self.speed_kt <= 0:
+        # `not (x > 0)` rather than `x <= 0`: both comparisons are False for
+        # NaN, so the latter waves NaN through and it poisons every figure
+        # downstream, dying only at response serialization with a message that
+        # names no input (found in review). The server also rejects NaN at the
+        # JSON layer; this is the engine's own guard for direct callers.
+        if not self.speed_kt > 0:
             errs.append(f'{self.name}: speed must be greater than zero')
         if self.loiter_hours < 0:
             errs.append(f'{self.name}: loiter must not be negative')
@@ -295,6 +302,12 @@ class Environment:
             errs.append('wind speed must not be negative')
         if self.current_speed_kt < 0:
             errs.append('current speed must not be negative')
+        # Mirrors Leg.validate. Without this a wmo of -1 through the API sailed
+        # past every check and silently planned the whole mission at the TOP
+        # premium, because sea_state_premium's "above the table, hold the top
+        # value" fallback cannot tell above from below (found in review).
+        if self.wmo_sea_state < 0:
+            errs.append('sea state must not be negative')
         return errs
 
 
@@ -537,7 +550,7 @@ class LegResult:
     current_speed_kt: float = 0.0
     current_set_deg: float = 0.0
     wmo_sea_state: int = 0
-    # -- Loiter: time held on station at the END of this leg, making no way.
+    # -- Loiter: time held on station at the START of this leg, making no way.
     # `hours`, `litres`, `fuel_rate_lph` and `nm_per_l` above all remain
     # UNDERWAY quantities, so `litres == fuel_rate_lph * hours` still holds and
     # nm_per_l still describes how far this gondola goes on a litre. The leg's
@@ -591,9 +604,13 @@ class PlanResult:
     # of a mission was spent holding rather than making way.
     total_loiter_hours: float = 0.0
     total_loiter_litres: float = 0.0
-    # -- The current this plan was RUN UNDER, carried so a surface reports the
-    # conditions the numbers came from rather than whatever a form happens to
-    # say now. Set is the direction the water flows TOWARD.
+    # -- The MISSION-WIDE FALLBACK current, i.e. Environment's values — NOT
+    # necessarily what any leg was flown in, now that weather is per-leg and
+    # the shipped UI sends an empty environment (these then read 0/slack while
+    # the legs fight a real current). The truth per leg is legs[].current_*;
+    # the UI's Current tile summarises those, never these. Kept because they
+    # are published API; do not point a new surface at them (found in review —
+    # the original comment here promised the opposite).
     current_speed_kt: float = 0.0
     current_set_deg: float = 0.0
     gauge_l_per_point: float | None = None
@@ -730,11 +747,18 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     if leg.kind == 'survey' and env.wind_speed_kt > 0 and len(runs) > 1:
         spread = max(prems) - min(prems)
         flat = model.fuel_rate_lph(rpm_benign * (1.0 + sea_p + premium_delta), gondola)
-        notes.append(
-            f'{len(runs)} lines, alternating reciprocals: the RPM premium swings '
-            f'{spread:.1%} across them. Summing line by line costs '
-            f'{rate / flat - 1:+.1%} against a cancelled premium, because fuel is '
-            f'convex in RPM.')
+        # `flat` can clamp to 0.0 — the EM712's linear law goes non-positive
+        # below ~712 rpm, which a 2 kt survey reaches — and a slow leg's own
+        # `rate` can clamp too. Either way the convexity comparison is
+        # meaningless there, and dividing by it crashed plan() outright
+        # (found in review, reproduced: em712, 10 kt wind, 2 kt survey → 500).
+        # The clamp note two lines down is the honest message for that regime.
+        if flat > 0 and rate > 0:
+            notes.append(
+                f'{len(runs)} lines, alternating reciprocals: the RPM premium swings '
+                f'{spread:.1%} across them. Summing line by line costs '
+                f'{rate / flat - 1:+.1%} against a cancelled premium, because fuel is '
+                f'convex in RPM.')
     if rate <= 0:
         notes.append('Fuel model clamped at zero; the leg is below its valid range.')
 
@@ -753,20 +777,28 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
                 f'through-water speed falls to {lo:.2f} kt — the hull is being carried. '
                 f'The fuel law says nothing at that speed; treat the figure as a floor.')
 
-    # -- Loiter, held at the end of the leg ---------------------------------- #
+    # -- Loiter, held at the START of the leg -------------------------------- #
+    # It was originally taken at the end, and the return leg is where that
+    # collapsed: a hold "at the end" of transit home is a hold AFTER arriving,
+    # so 4 h of delay moved the finish clock and not one mark — reported as
+    # "I do not get a 4 hours later arrival", and reproduced exactly. At the
+    # start, every leg reads right: a launch delay outbound, a hold before the
+    # first line on survey, an offshore hold before running in on the way home.
+    # One rule falls out: a hold delays the leg's own crossings and everything
+    # after it, and the arrival-home mark always equals total_hours.
     loiter_h = max(0.0, float(leg.loiter_hours or 0.0))
     loiter_lph, loiter_measured, loiter_rpm = model.loiter_rate_lph(gondola)
     loiter_l = loiter_lph * loiter_h
     if loiter_h > 0:
         if loiter_measured:
             notes.append(
-                f'Holding {_hm(loiter_h)} at the end of this leg: '
+                f'Holding {_hm(loiter_h)} at the start of this leg: '
                 f'{loiter_l:.1f} L at the measured idle burn of {loiter_lph:.2f} L/h. '
                 f'That figure is calm-water and carries NO sea-state premium — '
                 f'station-keeping in a seaway has never been measured.')
         else:
             notes.append(
-                f'Holding {_hm(loiter_h)} at the end of this leg: '
+                f'Holding {_hm(loiter_h)} at the start of this leg: '
                 f'{loiter_l:.1f} L at {loiter_lph:.2f} L/h, which is this '
                 f'gondola\'s fuel law read at {loiter_rpm:.0f} rpm — it has no '
                 f'measured idle burn, and that rpm is below the window the law '
@@ -856,8 +888,10 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
                  first leg and distance still to run on the last. There is no
                  position model here, so those are the only two honest readings
                  of "distance from home".
-      'phase'  — a change of mission phase: arrival on the survey area (start of
-                 the first survey leg) and departure from it (end of the last).
+      'phase'  — a change of mission phase: leaving home (the moment the first
+                 leg starts MAKING WAY, after any launch hold), arrival on the
+                 survey area, departure from it, and back alongside — which is
+                 the end of the mission, so its time always equals total_hours.
 
     Every mark reports elapsed time, clock time, fuel burned by then and what
     the gauge will read.
@@ -868,13 +902,21 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
         return marks, notes
 
     def add(idx: int, into_nm: float, kind: str, phase: str, label: str,
-            extra: dict[str, Any] | None = None) -> None:
+            extra: dict[str, Any] | None = None, after_hold: bool = True) -> None:
         r = results[idx]
         if r.speed_kt <= 0:
             return
         hrs = into_nm / r.speed_kt
-        elapsed = r.start_hours + hrs
-        burned = cum_l[idx] + r.fuel_rate_lph * hrs
+        # The hold sits at the START of the leg, so a mark N miles into the
+        # leg happens AFTER it — in time and in fuel. Leaving the hold out of
+        # either line is exactly the reported bug: a 4 h hold on the way home
+        # that moved no mark. `after_hold=False` is for the one event that
+        # happens at mile 0 BEFORE the leg's own hold: arriving somewhere and
+        # then holding there.
+        hold_h = r.loiter_hours if after_hold else 0.0
+        hold_l = r.loiter_litres if after_hold else 0.0
+        elapsed = r.start_hours + hold_h + hrs
+        burned = cum_l[idx] + hold_l + r.fuel_rate_lph * hrs
         iso, clock = _clock(start, elapsed)
         m: dict[str, Any] = {
             'kind': kind, 'phase': phase, 'label': label,
@@ -887,19 +929,35 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
             m['indicated_pct'] = prof.level_after(ind_start, burned)
         marks.append(m)
 
+    # -- home, both ways ----------------------------------------------------- #
+    # Departure is the moment the first leg starts MAKING WAY — after any
+    # launch hold, because "departing" names the vehicle leaving, not the
+    # mission clock starting. Arrival is the end of the last leg, holds and
+    # all, so its elapsed time always equals the plan's total_hours; a test
+    # pins that identity because it is what makes the marks table and the
+    # "Back alongside" readout agree.
+    add(0, 0.0, 'phase', 'home_departure', 'Departing home — mission starts')
+
     # -- on and off the survey area ----------------------------------------- #
     # Arrival is the start of the FIRST survey leg, departure the end of the
     # LAST: the vehicle is on task from the moment it starts the first line
     # until it leaves for good, and any repositioning between patches sits
     # inside that. A plan with no survey leg simply has neither mark; that is a
     # legitimate mission shape, not a near-miss, so it produces no warning.
+    # Arrival is stamped BEFORE the survey leg's own hold — the vehicle gets
+    # there, then waits — which is the one place the hold offset must not
+    # apply.
     survey = [i for i, r in enumerate(results) if r.kind == 'survey']
     if survey:
         add(survey[0], 0.0, 'phase', 'survey_arrival',
-            'Arriving survey area — survey starts')
+            'Arriving survey area — survey starts', after_hold=False)
         i = survey[-1]
         add(i, results[i].distance_nm, 'phase', 'survey_departure',
             'Survey complete — departing survey area')
+
+    last = len(results) - 1
+    add(last, results[last].distance_nm, 'phase', 'home_arrival',
+        'Back alongside — mission complete')
 
     # -- fixed distances from home, along the planned track ----------------- #
     # Deduplicated so a repeated radius cannot produce a doubled mark; the
@@ -1027,9 +1085,11 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
     # Lay the legs out on a mission timeline. Elapsed hours always; clock times
     # only when a start was given. cum_l[i] is the fuel burned BEFORE leg i,
     # which is what the range marks interpolate from.
-    # Loiter is held at the END of a leg, so it lands in end_hours and in the
-    # running burn, but NOT between a leg's start and its own distance marks —
-    # which is exactly why the marks below need no notion of it.
+    # Loiter is held at the START of a leg: the leg spans [start_hours,
+    # end_hours] with the hold occupying the first loiter_hours of it, and the
+    # distance running after. _mission_marks adds the hold before any mark on
+    # the leg — that offset is the fix for the reported "4 h hold on the way
+    # home moved nothing" bug.
     cum_l: list[float] = []
     elapsed = burned = 0.0
     for r in results:
@@ -1132,10 +1192,19 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
         warnings.append(
             f'Thin margin: only {margin_l:.1f} L above the reserve floor '
             f'({margin_nm:.0f} NM at the return leg burn rate).')
-    if env.wind_speed_kt > 0 and env.wmo_sea_state <= 1:
+    # Per LEG, not the mission Environment: since weather went per-leg the UI
+    # sends environment {}, so a mission-level check was dead for the primary
+    # client and blind to a leg that overrides the fallback (found in review).
+    # Legs are grouped into one warning so three windy legs do not nag thrice.
+    odd = [r.name for r in results
+           if r.wind_speed_kt > 0 and r.wmo_sea_state <= 1]
+    if odd:
+        worst = max((r for r in results if r.name in odd),
+                    key=lambda r: r.wind_speed_kt)
         warnings.append(
-            f'{env.wind_speed_kt:.0f} kt of wind with a WMO {env.wmo_sea_state} sea is '
-            f'an unusual pairing — check the sea state is right for the fetch.')
+            f'{worst.wind_speed_kt:.0f} kt of wind with a WMO {worst.wmo_sea_state} '
+            f'sea ({", ".join(odd)}) is an unusual pairing — check the sea state '
+            f'is right for the fetch.')
 
     if runs_dry:
         verdict = 'dry'
@@ -1323,10 +1392,17 @@ def max_survey_lines(legs: list[Leg], env: Environment, vessel: Vessel,
     while hi <= cap and fits(hi):
         lo, hi = hi, hi * 2
     if hi > cap:
-        return {'lines': cap, 'requested_lines': requested,
-                'line_length_nm': length, 'distance_nm': cap * length,
-                'shortfall_lines': 0, 'completes': True,
-                'note': f'More than {cap} lines fit; the search stops there.'}
+        # The probe has only ever PROVEN lo (a power of two) fits; hi doubling
+        # past the cap says nothing about the counts between lo and cap. The
+        # old exit returned lines=cap, completes=True here without checking —
+        # review reproduced a mission whose true max was 20 being told 30 fit,
+        # a plan 52 L past the floor. Ask the question before answering it.
+        if fits(cap):
+            return {'lines': cap, 'requested_lines': requested,
+                    'line_length_nm': length, 'distance_nm': cap * length,
+                    'shortfall_lines': 0, 'completes': True,
+                    'note': f'At least {cap} lines fit; the search stops there.'}
+        hi = cap                      # cap does not fit: bisect lo..cap honestly
     while hi - lo > 1:
         mid = (lo + hi) // 2
         if fits(mid):

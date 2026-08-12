@@ -47,11 +47,22 @@ class TestLegOrder(unittest.TestCase):
         self.css = (UI / 'styles.css').read_text(encoding='utf-8')
 
     def _legs(self) -> list[tuple[str, str]]:
-        """(heading, class attribute) for each leg block, in document order."""
-        blocks = re.findall(r'<div class="(leg[^"]*)">(.*?)</div>\s*</div>',
-                            self.html, re.DOTALL)
-        return [(re.search(r'<h3>(.*?)</h3>', body).group(1).strip(), cls)
-                for cls, body in blocks]
+        """(heading, class attribute) for each leg block, in document order.
+
+        The class pattern anchors on `leg` as a whole word — `leg(?: ...)?` —
+        because review found the previous `leg[^"]*` also matched the `.legs`
+        CONTAINER, so the first "leg" this returned was the wrapper div and
+        Transit out's own class attribute was never inspected. It produced the
+        right answer by coincidence, which is worse than being wrong. Pairing
+        each class to the NEXT <h3> avoids depending on `</div>` nesting, which
+        the old regex truncated mid-grid.
+        """
+        pairs = []
+        for m in re.finditer(r'<div class="(leg(?: [^"]*)?)">', self.html):
+            h3 = re.search(r'<h3>(.*?)</h3>', self.html[m.end():])
+            self.assertIsNotNone(h3, f'no heading after leg div at {m.start()}')
+            pairs.append((h3.group(1).strip(), m.group(1)))
+        return pairs
 
     def _request_leg_names(self) -> list[str]:
         body = re.search(r'legs:\s*\[(.*?)\n    \],', self.js, re.DOTALL)

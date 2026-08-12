@@ -1,19 +1,9 @@
 # Quick start
 
 Plan a transit–survey–transit mission and see whether it comes home above the
-reserve. Start the planner, fill in four cards, press **Plan mission**.
+reserve. Start the planner, fill in three cards, press **Plan mission**.
 
-## 1. Environment
-
-Sea state, wind and current.
-
-- **Sea state** sets an RPM premium. It is an **assumption**, not a measurement —
-  the source data supports one anchor. Treat it as a dial to turn.
-- **Wind** is named for where it blows **from**.
-- **Current** is named for where it **sets toward**. The two conventions are
-  opposite, as at sea. A current changes the fuel, never the clock.
-
-## 2. Vessel
+## 1. Vessel
 
 - **Gondola** — EM2040 is the one currently fitted and the one with measured
   curves at survey speed. The EM712 is flagged as an extrapolation at 8 kt.
@@ -21,17 +11,27 @@ Sea state, wind and current.
   evidence-based scenarios.
 - **Return reserve** — the floor you plan to come home above. Default 25%.
 
-## 3. Mission clock and waypoints
+## 2. Mission clock and waypoints
 
 - **Start time** is optional. Leave it blank for elapsed hours only.
 - **Mission waypoints** are distances from home, each timed twice: outbound on
   the first leg, inbound on the last. Enter them in **km or NM** — switching the
   unit converts what you typed, so the waypoints stay in the same place.
 
-## 4. Mission legs
+## 3. Mission legs
 
 Three legs: transit out, survey, transit home. The survey block reads last but
 is flown in the middle.
+
+**Weather lives on each leg**, because a mission runs long enough for it to
+change: every leg has its own sea state, wind and current on its Weather row.
+
+- **Sea state** sets an RPM premium, shown beside the selector. It is an
+  **assumption**, not a measurement — the source data supports one anchor.
+  Treat it as a dial to turn.
+- **Wind** is named for where it blows **from**.
+- **Current** is named for where it **sets toward**. The two conventions are
+  opposite, as at sea. A current changes the fuel, never the clock.
 
 - A survey is **lines x line length** on a bearing, alternate lines reciprocal.
 - **Max survey for the reserve** fills in the line count that fuel allows. Fill
@@ -39,8 +39,9 @@ is flown in the middle.
   over the answer afterwards.
 - **Loiter** imposes a delay on any leg — launch or recovery hold-ups, traffic,
   a sensor problem. Enter minutes or hours, or use `+15m` / `+1h`. It burns at
-  the measured idle rate and is taken at the end of the leg.
-  Press **Plan mission** again to replan with it.
+  the measured idle rate and is taken at the start of the leg, so it delays that
+  leg's crossings and everything after — a hold on the way home arrives home
+  late. Press **Plan mission** again to replan with it.
 
 ## Reading the answer
 

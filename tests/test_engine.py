@@ -320,7 +320,9 @@ class TestMaxSurveyLength(unittest.TestCase):
 
 
 class TestGondolas(unittest.TestCase):
-    """Per-gondola curves: EM712 measured, EM2040 derived by transfer."""
+    """Per-gondola curves. Both MEASURED since the Aug 2026 MCAP refit —
+    the EM2040 was derived by transfer until then, and the derived-status
+    warning path now survives only via the explicit mutation test below."""
 
     B2040 = -0.04343717952015602
     M2040 = 0.004033265611920235
@@ -1083,11 +1085,116 @@ class TestPerLegWeather(unittest.TestCase):
         self.assertAlmostEqual(p.legs[0].wind_speed_kt, 1.0, places=12)
 
 
+class TestReviewFindings(unittest.TestCase):
+    """Regressions for the 2026-08-12 adversarial review's confirmed bugs."""
+
+    def setUp(self):
+        self.m = Model()
+
+    def test_a_slow_survey_in_wind_does_not_crash_the_planner(self):
+        """The EM712's linear fuel law clamps to zero below ~712 rpm, and the
+        convexity note divided by it: a 2 kt survey in any wind crashed plan()
+        with ZeroDivisionError, which the server served as a 500. The note is
+        meaningless in the clamped regime; the clamp warning is the honest
+        message there."""
+        legs = [Leg('tow', 'survey', 6.0, 2.0, 0.0)]
+        p = plan(legs, Environment(wmo_sea_state=2, wind_speed_kt=10.0),
+                 Vessel(gondola='em712'), self.m)      # must simply not raise
+        notes = ' '.join(p.legs[0].notes)
+        self.assertIn('clamped at zero', notes)
+        self.assertNotIn('cancelled premium', notes)
+        # ...and the acceptance case: a normal survey still gets the note.
+        ok = plan([Leg('s', 'survey', 40.0, 8.0, 0.0, lines=4,
+                       line_length_nm=10.0)],
+                  Environment(wmo_sea_state=2, wind_speed_kt=10.0),
+                  Vessel(gondola='em2040'), self.m)
+        self.assertIn('cancelled premium', ' '.join(ok.legs[0].notes))
+
+    def test_the_lines_cap_is_verified_not_asserted(self):
+        """The exponential probe used to return lines=cap, completes=True the
+        moment hi doubled past the cap — without ever asking fits(cap). Review
+        reproduced a mission whose true max was 20 being told 30 fit, 52 L past
+        the floor. The cap exit must answer the same question as every other
+        path: the returned count FITS, the count above it does not (or is the
+        cap)."""
+        env = Environment(wmo_sea_state=2, wind_speed_kt=25.0)
+        vessel = Vessel(start_level_fraction=0.75, gondola='em2040')
+        legs = [Leg('out', 'transit', 20.0, 8.0, 0.0),
+                Leg('survey', 'survey', 0.0, 8.0, 90.0, lines=50,
+                    line_length_nm=10.0),
+                Leg('home', 'transit', 20.0, 8.0, 180.0)]
+        res = max_survey_lines(legs, env, vessel, self.m, cap=30)
+        true_max = max_survey_lines(legs, env, vessel, self.m)['lines']
+        self.assertLess(true_max, 30)          # the cap genuinely binds here
+        self.assertEqual(res['lines'], true_max)
+        # And a cap BELOW the true answer honestly reports the cap fitting.
+        low = max_survey_lines(legs, env, vessel, self.m, cap=max(1, true_max - 5))
+        self.assertEqual(low['lines'], max(1, true_max - 5))
+        self.assertIn('At least', low['note'])
+
+    def test_the_wind_sea_sanity_warning_is_per_leg(self):
+        """It read only the mission Environment, which the UI always sends
+        empty — dead for the primary client, blind to per-leg weather."""
+        legs = [Leg('out', 'transit', 20.0, 8.0, 0.0,
+                    wind_speed_kt=30.0, wmo_sea_state=0),
+                Leg('home', 'transit', 20.0, 8.0, 180.0)]
+        p = plan(legs, Environment(wmo_sea_state=2, wind_speed_kt=0.0),
+                 Vessel(gondola='em2040'), self.m)
+        hit = [w for w in p.warnings if 'unusual pairing' in w]
+        self.assertEqual(len(hit), 1)
+        self.assertIn('out', hit[0])
+        # No warning when every windy leg has a plausible sea.
+        calm = plan([Leg('out', 'transit', 20.0, 8.0, 0.0,
+                         wind_speed_kt=30.0, wmo_sea_state=5)],
+                    Environment(wmo_sea_state=2), Vessel(gondola='em2040'),
+                    self.m)
+        self.assertFalse([w for w in calm.warnings if 'unusual pairing' in w])
+
+    def test_a_negative_mission_sea_state_is_refused(self):
+        """Leg.validate rejected -1 while Environment.validate waved it
+        through — and sea_state_premium's above-the-table fallback then
+        silently planned the whole mission at the TOP premium."""
+        with self.assertRaises(ValueError) as cm:
+            plan([Leg('out', 'transit', 20.0, 8.0, 0.0)],
+                 Environment(wmo_sea_state=-1), Vessel(gondola='em2040'),
+                 self.m)
+        self.assertIn('sea state must not be negative', str(cm.exception))
+
+    def test_the_solvers_carry_per_leg_weather(self):
+        """Both solvers rebuild legs via asdict, which preserves the per-leg
+        overrides — but nothing pinned that, so a hand-rolled copy that listed
+        fields would have dropped them silently. A survey fighting its own
+        30 kt wind must solve shorter than one inheriting the calm mission
+        default."""
+        env = Environment(wmo_sea_state=2, wind_speed_kt=0.0)
+        vessel = Vessel(gondola='em2040')
+        calm = [Leg('out', 'transit', 20.0, 8.0, 0.0),
+                Leg('survey', 'survey', 100.0, 8.0, 0.0),
+                Leg('home', 'transit', 20.0, 8.0, 180.0)]
+        windy = [calm[0],
+                 Leg('survey', 'survey', 100.0, 8.0, 0.0, wind_speed_kt=30.0,
+                     wind_from_deg=0.0),
+                 calm[2]]
+        self.assertLess(max_survey_length(windy, env, vessel, self.m),
+                        max_survey_length(calm, env, vessel, self.m))
+        lined = [calm[0],
+                 Leg('survey', 'survey', 0.0, 8.0, 0.0, lines=100,
+                     line_length_nm=10.0, wind_speed_kt=30.0, wind_from_deg=0.0),
+                 calm[2]]
+        lined_calm = [calm[0],
+                      Leg('survey', 'survey', 0.0, 8.0, 0.0, lines=100,
+                          line_length_nm=10.0),
+                      calm[2]]
+        self.assertLess(max_survey_lines(lined, env, vessel, self.m)['lines'],
+                        max_survey_lines(lined_calm, env, vessel, self.m)['lines'])
+
+
 class TestLoiter(unittest.TestCase):
     """Delays imposed on a leg, charged at the gondola's idle burn.
 
     Things happen at sea; the model accommodates them rather than pretending
-    the plan ran clean. Loiter is held at the END of its leg.
+    the plan ran clean. Loiter is held at the START of its leg — the vehicle
+    waits, then runs the distance.
     """
 
     def setUp(self):
@@ -1149,20 +1256,38 @@ class TestLoiter(unittest.TestCase):
         self.assertAlmostEqual(held.legs[1].nm_per_l, base.legs[1].nm_per_l,
                                places=12)
 
-    def test_a_hold_shifts_everything_after_it_and_nothing_before(self):
-        """Loiter sits at the END of its leg, so the first leg's own outbound
-        waypoint is untouched while the inbound one moves out by the delay."""
+    def test_a_hold_delays_its_own_legs_crossings_and_everything_after(self):
+        """Loiter sits at the START of its leg — a launch delay outbound — so
+        even the first leg's own outbound waypoint moves by the hold. The
+        end-of-leg convention this replaced kept that mark still, which on the
+        return leg meant a 4 h hold that moved no mark at all: the reported
+        bug."""
         base = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,))
         held = plan(self._with_loiter(0, 4.0), self.env, self._v(), self.m,
                     waypoints=(13.0,))
-        b_out = next(m for m in base.marks if m['phase'] == 'outbound')
-        h_out = next(m for m in held.marks if m['phase'] == 'outbound')
-        self.assertAlmostEqual(b_out['elapsed_hours'], h_out['elapsed_hours'],
-                               places=12)
-        b_in = next(m for m in base.marks if m['phase'] == 'inbound')
-        h_in = next(m for m in held.marks if m['phase'] == 'inbound')
-        self.assertAlmostEqual(h_in['elapsed_hours'] - b_in['elapsed_hours'],
-                               4.0, places=12)
+        for phase in ('outbound', 'inbound', 'home_arrival'):
+            b = next(m for m in base.marks if m['phase'] == phase)
+            h = next(m for m in held.marks if m['phase'] == phase)
+            self.assertAlmostEqual(h['elapsed_hours'] - b['elapsed_hours'],
+                                   4.0, places=12, msg=phase)
+
+    def test_the_reported_bug_a_hold_on_the_way_home_delays_the_arrival(self):
+        """Andy's exact scenario: 4 h of loiter on transit home must arrive
+        4 h later — at the inbound crossings AND back alongside."""
+        base = plan(self.legs, self.env, self._v(), self.m)
+        held = plan(self._with_loiter(2, 4.0), self.env, self._v(), self.m)
+        for phase in ('inbound', 'home_arrival'):
+            b = next(m for m in base.marks if m['phase'] == phase)
+            h = next(m for m in held.marks if m['phase'] == phase)
+            self.assertAlmostEqual(h['elapsed_hours'] - b['elapsed_hours'],
+                                   4.0, places=12, msg=phase)
+        # ...while everything before the held leg stays put.
+        for phase in ('home_departure', 'outbound', 'survey_arrival',
+                      'survey_departure'):
+            b = next(m for m in base.marks if m['phase'] == phase)
+            h = next(m for m in held.marks if m['phase'] == phase)
+            self.assertAlmostEqual(b['elapsed_hours'], h['elapsed_hours'],
+                                   places=12, msg=phase)
 
     def test_the_fuel_at_a_later_mark_includes_the_hold(self):
         """An ordering assertion would pass with the hold's fuel dropped."""
@@ -1170,10 +1295,47 @@ class TestLoiter(unittest.TestCase):
         base = plan(self.legs, self.env, self._v(), self.m, waypoints=(13.0,))
         held = plan(self._with_loiter(0, 4.0), self.env, self._v(), self.m,
                     waypoints=(13.0,))
-        b_in = next(m for m in base.marks if m['phase'] == 'inbound')
-        h_in = next(m for m in held.marks if m['phase'] == 'inbound')
-        self.assertAlmostEqual(h_in['litres_burned'] - b_in['litres_burned'],
-                               4.0 * lph, places=9)
+        for phase in ('outbound', 'inbound'):
+            b = next(m for m in base.marks if m['phase'] == phase)
+            h = next(m for m in held.marks if m['phase'] == phase)
+            self.assertAlmostEqual(h['litres_burned'] - b['litres_burned'],
+                                   4.0 * lph, places=9, msg=phase)
+
+    def test_departure_is_after_the_launch_hold_and_arrival_before_none(self):
+        """"Departing home" names the vehicle leaving, not the clock starting:
+        a 2 h launch hold means departure at T+2 with the hold's fuel burned.
+        Survey arrival is the opposite case — stamped BEFORE that leg's own
+        hold, because the vehicle gets there and then waits."""
+        legs = self._with_loiter(0, 2.0)
+        p = plan(legs, self.env, self._v(), self.m)
+        dep = next(m for m in p.marks if m['phase'] == 'home_departure')
+        self.assertAlmostEqual(dep['elapsed_hours'], 2.0, places=12)
+        self.assertAlmostEqual(dep['litres_burned'], 2.0 * p.legs[0].loiter_lph,
+                               places=9)
+        held_survey = plan(self._with_loiter(1, 3.0), self.env, self._v(), self.m)
+        base = plan(self.legs, self.env, self._v(), self.m)
+        b_arr = next(m for m in base.marks if m['phase'] == 'survey_arrival')
+        h_arr = next(m for m in held_survey.marks if m['phase'] == 'survey_arrival')
+        self.assertAlmostEqual(b_arr['elapsed_hours'], h_arr['elapsed_hours'],
+                               places=12)
+        b_dep = next(m for m in base.marks if m['phase'] == 'survey_departure')
+        h_dep = next(m for m in held_survey.marks if m['phase'] == 'survey_departure')
+        self.assertAlmostEqual(h_dep['elapsed_hours'] - b_dep['elapsed_hours'],
+                               3.0, places=12)
+
+    def test_arrival_home_always_equals_the_mission_total(self):
+        """The identity that keeps the marks table and the "Back alongside"
+        readout agreeing, holds or none."""
+        for legs in (self.legs, self._with_loiter(0, 1.0),
+                     self._with_loiter(2, 4.0)):
+            p = plan(legs, self.env, self._v(), self.m)
+            arr = next(m for m in p.marks if m['phase'] == 'home_arrival')
+            self.assertAlmostEqual(arr['elapsed_hours'], p.total_hours,
+                                   places=12)
+            self.assertAlmostEqual(arr['litres_burned'], p.total_litres,
+                                   places=9)
+            self.assertEqual(p.marks[0]['phase'], 'home_departure')
+            self.assertEqual(p.marks[-1]['phase'], 'home_arrival')
 
     def test_a_long_enough_hold_breaches_the_reserve(self):
         """The point of the feature: a delay must be able to change the answer,
@@ -1284,7 +1446,8 @@ class TestMissionClock(unittest.TestCase):
         self.assertTrue(all(l.end_clock is None for l in p.legs))
         self.assertGreater(p.legs[-1].end_hours, 0.0)
         # marks still exist, timed in elapsed hours only
-        self.assertEqual(len(p.marks), 6)      # survey in/out + two radii, in and out
+        # home out/in + survey in/out + two radii, in and out
+        self.assertEqual(len(p.marks), 8)
         self.assertTrue(all(m['clock'] is None for m in p.marks))
 
     def test_clock_times_are_start_plus_elapsed(self):
@@ -1567,12 +1730,15 @@ class TestMissionClock(unittest.TestCase):
         self.assertEqual(dep['leg'], 'survey B')
         self.assertAlmostEqual(dep['elapsed_hours'], p.legs[3].end_hours, places=12)
 
-    def test_no_survey_leg_means_no_phase_marks_and_no_warning(self):
-        """A transit-only plan is a legitimate shape, not a near-miss."""
+    def test_no_survey_leg_means_no_survey_marks_and_no_warning(self):
+        """A transit-only plan is a legitimate shape, not a near-miss. It still
+        departs and arrives — those marks belong to every mission — but nothing
+        mentions a survey."""
         legs = [Leg('out', 'transit', 20.0, 8.0, 0.0),
                 Leg('home', 'transit', 20.0, 8.0, 180.0)]
         p = plan(legs, self.env, self._v(), self.m)
-        self.assertFalse([m for m in p.marks if m['kind'] == 'phase'])
+        self.assertEqual([m['phase'] for m in p.marks if m['kind'] == 'phase'],
+                         ['home_departure', 'home_arrival'])
         self.assertFalse(any('survey' in w.lower() for w in p.warnings))
 
     def test_marks_are_chronological(self):
@@ -1580,8 +1746,9 @@ class TestMissionClock(unittest.TestCase):
         times = [m['elapsed_hours'] for m in p.marks]
         self.assertEqual(times, sorted(times))
         self.assertEqual([m['phase'] for m in p.marks],
-                         ['outbound', 'outbound', 'survey_arrival',
-                          'survey_departure', 'inbound', 'inbound'])
+                         ['home_departure', 'outbound', 'outbound',
+                          'survey_arrival', 'survey_departure',
+                          'inbound', 'inbound', 'home_arrival'])
 
     def test_a_bad_start_time_is_rejected(self):
         with self.assertRaises(ValueError) as ctx:
@@ -1604,7 +1771,7 @@ class TestMissionClock(unittest.TestCase):
         text = json.dumps(p.to_dict(), allow_nan=False)
         back = json.loads(text)
         self.assertEqual(back['start_clock'], '11 Aug 06:30')
-        self.assertEqual(len(back['marks']), 6)
+        self.assertEqual(len(back['marks']), 8)
 
 
 class TestSurveyLines(unittest.TestCase):
