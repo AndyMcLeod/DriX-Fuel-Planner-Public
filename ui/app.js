@@ -170,8 +170,6 @@ const TIPS = {
   '#waypointUnit':
     'A display choice only. Switching it converts the numbers and never moves a '
     + 'waypoint along the track.',
-  '#finishOut':
-    'Clock time back alongside, including every loiter hold.',
   '#originLat':
     'Departure latitude in signed decimal degrees, + north. Needed only for the '
     + 'forecast currents.',
@@ -1067,10 +1065,6 @@ function render(p) {
         ([name, n]) => `<li><strong>${escapeHtml(name)}:</strong> ${escapeHtml(n)}</li>`
       ).join('') + '</ul>'
     : '';
-
-  $('finishOut').textContent = p.finish_clock
-    ? p.finish_clock
-    : `T+${fmt(p.total_hours, 2)} h`;
 
   const mk = $('marksTable').querySelector('tbody');
   mk.innerHTML = (p.marks || []).map((m) => `

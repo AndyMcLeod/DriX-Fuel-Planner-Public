@@ -1153,8 +1153,12 @@ or `'phase'`: `home_departure` (the first leg starts **making way**, after any
 launch hold), `survey_arrival` (the start of the **first** survey leg, before
 its own hold), `survey_departure` (the end of the **last**), and `home_arrival`
 (the end of the mission — **always equal to `total_hours`**, an identity a test
-pins so the marks table and the "Back alongside" readout cannot disagree; the
-home marks were added 2026-08-12 with the loiter-placement fix).
+pins so the marks table and the mission's own total cannot disagree; the home
+marks were added 2026-08-12 with the loiter-placement fix). **The Mission clock
+card's "Back alongside" readout was removed 2026-08-13 (Andy)** — the same
+figure is still in the marks table as `home_arrival`, and `finish_clock` is
+untouched on the API and in the report, so nothing but the duplicate readout
+went.
 Arrival-to-departure is time on task, so a reposition between two survey
 patches sits *inside* the span rather than splitting it. Sorting happens once at
 the end of `_mission_marks` (stable, so same-time marks keep insertion order:

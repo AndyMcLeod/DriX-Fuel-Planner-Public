@@ -1324,8 +1324,8 @@ class TestLoiter(unittest.TestCase):
                                3.0, places=12)
 
     def test_arrival_home_always_equals_the_mission_total(self):
-        """The identity that keeps the marks table and the "Back alongside"
-        readout agreeing, holds or none."""
+        """The identity that keeps the marks table and the mission's own total
+        agreeing, holds or none."""
         for legs in (self.legs, self._with_loiter(0, 1.0),
                      self._with_loiter(2, 4.0)):
             p = plan(legs, self.env, self._v(), self.m)

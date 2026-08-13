@@ -1026,8 +1026,9 @@ def _mission_marks(results: list[LegResult], cum_l: list[float],
     # launch hold, because "departing" names the vehicle leaving, not the
     # mission clock starting. Arrival is the end of the last leg, holds and
     # all, so its elapsed time always equals the plan's total_hours; a test
-    # pins that identity because it is what makes the marks table and the
-    # "Back alongside" readout agree.
+    # pins that identity because it is what stops the marks table and the
+    # mission's own total disagreeing wherever both are shown — the summary
+    # tiles, the report, and any surface that renders one without the other.
     add(0, 0.0, 'phase', 'home_departure', 'Departing home — mission starts')
 
     # -- on and off the survey area ----------------------------------------- #
