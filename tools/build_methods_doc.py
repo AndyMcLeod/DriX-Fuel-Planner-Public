@@ -60,6 +60,11 @@ G = MODEL['gondolas']['options']['em2040']
 # capacity x (1 - reserve) figure kept only to show what it gets wrong.
 sys.path.insert(0, str(HERE.parent))
 from engine import Model as _EngModel  # noqa: E402
+# §7's figures come from currents.py itself — the cycle shape, the projection
+# reach and the measured accuracy block — so the chapter cannot drift from the
+# code the way a hand-typed one would. Nothing here reads the network or needs a
+# cached cycle: a fresh clone builds this document.
+import currents as ofs  # noqa: E402
 _ENG = _EngModel()
 _RES_PCT = MODEL['reserve']['default_fraction'] * 100.0
 _MISSION_L = _ENG.gauge_profile.litres_between(_RES_PCT, 100.0)
@@ -286,8 +291,119 @@ para('The planner uses the fitted laws as measured, because they are most accura
      'additionally by the measured idle burn. The two families agree closely in band, and the '
      'endurance sheet states which it uses.')
 
-# ============================================================== 7 VERIFICATION
-doc.add_heading('7.  Verification', level=1)
+# =================================================================== 7 CURRENTS
+doc.add_heading('7.  Currents from the NOAA forecast', level=1)
+para('A second data source, acquired and used differently from everything above. The endurance '
+     'laws come from the vehicle\'s own recordings; the tidal current comes from an operational '
+     'model published by NOAA, and it is the only part of the planner that touches a network. It '
+     'is documented here because it is an input to a plan, and an input a reader may need to '
+     'defend.')
+callout('What it does NOT change',
+        'No coefficient moves. model.json is untouched by any of this, the engine gained nothing, '
+        'and no fitted value is involved. The forecast supplies two inputs that already existed — '
+        'a leg\'s current speed and set — so an operator who types the tide in from a table gets '
+        'exactly the same arithmetic. Never pressing the button leaves the planner as it was.')
+
+doc.add_heading('7.1  Product, and the decision that mattered', level=2)
+para('NOAA publishes the Delaware Bay Operational Forecast System over OPeNDAP in two forms. The '
+     'native ROMS output carries velocities on a curvilinear grid in GRID axes on staggered '
+     'points: using it means averaging u and v onto rho points and rotating every cell by its own '
+     'angle before a bearing means anything. The regridded product is rectilinear and already '
+     'true-referenced.')
+para('This reads the regridded product, because the two operations the native one needs are '
+     'exactly the two that fail SILENTLY — get the rotation wrong and every set is out by tens of '
+     'degrees while every speed still looks reasonable. That shortcut is therefore evidenced '
+     'rather than assumed: currents.py crosscheck performs the native path by hand and compares, '
+     'and the two agree to a median 0.07 kt and 1.0°.')
+
+doc.add_heading('7.2  What a cycle is, and which one answers', level=2)
+table(['Property', 'Value'],
+      [['Nowcast hours (up to the cycle time)', f'{ofs.NOWCAST_H}'],
+       ['Forecast hours (after it)', f'{ofs.FORECAST_H}'],
+       ['Frames per cycle', f'{ofs.NOWCAST_H + ofs.FORECAST_H} hourly'],
+       ['Span', f'{ofs.NOWCAST_H + ofs.FORECAST_H - 1} h'],
+       ['Layer', 'surface only (depth 0 m)'],
+       ['Archive NOAA serves', 'about 2 days'],
+       ['Projection reach', f'{ofs.MAX_PROJECT_CYCLES} tidal cycles '
+                            f'({ofs.MAX_PROJECT_CYCLES * ofs.M2_PERIOD_H:.1f} h)']],
+      [2.6, 3.2], right_from=1,
+      note='Table 5 — Cycle shape and the limits around it, read from currents.py at build time.')
+para('A requested time is answered by a ladder, and real data always beats an estimate: a cached '
+     'cycle covering the window; else a cycle NOAA still serves covering it, found from the '
+     'catalog for the price of one page rather than a 33 MB download, and fetched; else a '
+     'projection; else a refusal. Cycle selection checks the BOX as well as the span — a cycle '
+     'fetched for one operating area cannot answer for another, and without that check it would '
+     'report no water on every leg, which reads like a forecast of slack water rather than the '
+     'wrong file.')
+
+doc.add_heading('7.3  Projection, and what it is worth', level=2)
+_PA = ofs.PROJECTION_ACCURACY
+_pr = _PA['projected_rms_kt']
+para('The current here is semidiurnal, so a time the forecast cannot reach is estimated from the '
+     f'value one M2 period ({ofs.M2_PERIOD_H} h) away — never by holding the last value, and never '
+     'by extrapolating a line through a reversing tide. That is a measurement rather than a '
+     'preference:')
+table(['Method', 'RMS error against the model'],
+      [[f'Project {n} cycle{"s" if n > 1 else ""} '
+        f'({n * ofs.M2_PERIOD_H:.1f} h)', f'{v:.2f} kt'] for n, v in sorted(_pr.items())]
+      + [['Hold the last value',
+          f'{_PA["persistence_rms_kt"][0]:.2f} – {_PA["persistence_rms_kt"][1]:.2f} kt'],
+         ['Assume slack water',
+          f'{_PA["slack_rms_kt"][0]:.2f} – {_PA["slack_rms_kt"][1]:.2f} kt']],
+      [3.0, 2.8], right_from=1,
+      note=f'Table 6 — Measured on {_PA["cycle"]} across {_PA["samples"]} samples '
+           f'({_PA["measured_utc"]}), reproducible with tools/projection_accuracy.py. '
+           + _PA['note'])
+para(f'The reach is capped at {ofs.MAX_PROJECT_CYCLES} cycles for that reason and not because it '
+     'is a round number: the error is flat that far because a tide repeats, but the non-tidal part '
+     '— wind setup, river flow — does not repeat at all, and beyond about a day and a half there '
+     'is no evidence in hand. Two things a projection never does: it never moves a POSITION, so a '
+     'point with no model water is unanswered however the time is shifted; and it never happens '
+     'silently — a projected leg is flagged in the response, named in its note, marked in the '
+     'provenance label the mission report prints, and surfaced in the plan warnings.')
+
+doc.add_heading('7.4  How a current reaches a plan', level=2)
+para('There are exactly two seams, and they differ in resolution rather than in kind:')
+bullets([
+    ('Per leg, one number each. ',
+     'The mission is dead-reckoned from the departure position and time, each leg sampled along '
+     'its own track at the time the vehicle would be there, and the samples vector-averaged. A '
+     'survey holds position and only advances the clock, because a lawnmower ends roughly where '
+     'it began and walking it down the first line\'s course would put the run home in the wrong '
+     'water.'),
+    ('Along the track, a field. ',
+     'Given geometry, the planner instead calls back once per RUN — per survey line, per transit '
+     'segment — with where the vehicle is and how far into the mission, and takes the current '
+     'there and then. This is what makes a turning tide real rather than averaged.'),
+])
+para('Either way the current changes the FUEL and never the clock: the required speed over ground '
+     'is converted to the speed through the water the hull must actually make, and that goes '
+     'through the gondola\'s speed law to get RPM. A leg still takes distance divided by speed.')
+callout('It is partly counted twice, and the leg note says so',
+        'The speed law is fitted against speed over ground in an unrecorded tide, so some tidal '
+        'effect is already inside it. Reading the tide off the forecast makes the INPUT better; it '
+        'does not make the correction clean. The honest framing is "compare two plans" or "price '
+        'today\'s tide", not "a calibrated tidal model". Removing it properly needs the same '
+        'reciprocal-heading runs §9 already asks for.')
+
+doc.add_heading('7.5  A worked example', level=2)
+para('One mission, planned three ways, against a real cycle. Twelve miles out on 045, a 12 × 2 NM '
+     'survey on 020, twelve miles home on 225, departing Lewes at midday UTC:')
+table(['Planned with', 'Fuel', 'Mission clock'],
+      [['Slack water (no current)', '17.18 L', '7.43 h'],
+       ['Per-leg currents from the forecast', '18.08 L  (+5.2%)', '7.43 h'],
+       ['Sampled along the track', '17.64 L  (+2.7%)', '7.43 h']],
+      [2.7, 1.7, 1.4], right_from=1,
+      note='Table 7 — Transcript against dbofs_20260813_t00z. The clock is identical in all '
+           'three: a current moves the fuel and never the time.')
+para('The reading that matters is the third row. Sampling along the track gives 2.7% where the '
+     'per-leg average gives 5.2% — nearly double — because the survey sits on one ground for four '
+     'hours while the tide turns under it, and a single vector average of a reversing current '
+     'overstates what the boat actually fights. That is the argument for entering geometry, in '
+     'numbers rather than in principle.')
+
+# ============================================================== 8 VERIFICATION
+doc.add_heading('8.  Verification', level=1)
 bullets([
     ('Flow-meter integral against the vehicle\'s own counter. ',
      'Integrated fuel rate is compared with the cumulative total_fuel_used_l for each day; '
@@ -300,10 +416,21 @@ bullets([
     ('Mutation tests. ',
      'The planner\'s test suite perturbs each coefficient and asserts the results move. A model '
      'change that no test notices means the tests are broken, not that the change is safe.'),
+    ('Currents, three independent ways. ',
+     'Direction fails quietly, so the forecast path is checked against things that are not it: '
+     'currents.py crosscheck reproduces the native ROMS path by hand (median 0.07 kt, 1.0°); '
+     'tools/dbofs_plotcheck.py redraws the extracted field onto NOAA\'s own published image, '
+     'deriving the georeference from the plot\'s graticule rather than a stated corner; and '
+     'currents.py station_check compares against CO-OPS harmonic predictions at a real station '
+     '(r = +0.987 over 54 h).'),
+    ('Projection accuracy. ',
+     'tools/projection_accuracy.py re-measures what a projection is worth against the model\'s '
+     'own output, and reports whether the recorded block still matches. §7.3 quotes that block '
+     'rather than a typed number.'),
 ])
 
-# ==================================================================== 8 LIMITS
-doc.add_heading('8.  Limits of the method', level=1)
+# ==================================================================== 9 LIMITS
+doc.add_heading('9.  Limits of the method', level=1)
 para('Stated plainly, because each one bounds how far the numbers should be trusted:')
 bullets([
     ('Speed is over ground. ',
@@ -320,6 +447,17 @@ bullets([
     ('One vehicle, one gondola configuration. ',
      'These laws describe DriX-8 as currently fitted. Fouling, loading and payload changes all '
      'move them, which is exactly why per-day agreement is monitored.'),
+    ('The forecast current is surface only, and partly double-counted. ',
+     'It is the 0 m layer on an hourly grid a few hundred metres across; no shear is modelled, '
+     'and the vehicle draws two metres. Because the speed law above is fitted against speed over '
+     'ground in an unrecorded tide, applying a forecast current counts some of that tide twice — '
+     'see §7.4. It improves the input; it does not make the correction clean.'),
+    ('The forecast archive is about two days deep. ',
+     f'Beyond it a requested time can only be estimated, and only within '
+     f'{ofs.MAX_PROJECT_CYCLES} tidal cycles '
+     f'({ofs.MAX_PROJECT_CYCLES * ofs.M2_PERIOD_H:.0f} h) of data actually held. Past that the '
+     'planner declines rather than guessing, and a position with no model water is never answered '
+     'at any time by any route.'),
 ])
 
 doc.add_heading('Appendix  —  Reproducing this analysis', level=1)
@@ -329,7 +467,13 @@ mono('python tools/extract_bags.py D:/Claude/Fuel/D8_2040\n'
      'python tools/fit_em2040.py\n'
      'python tools/compare_fits.py\n'
      'python tools/build_endurance_sheet.py  [OUT.xlsx]\n'
-     'python tools/build_methods_doc.py      [OUT.docx]',
+     'python tools/build_methods_doc.py      [OUT.docx]\n'
+     'powershell -File tools/export_pdf.ps1  [-Path docs\\X.docx]\n'
+     '\n'
+     '# §7 only, and independent of the bags:\n'
+     'python currents.py fetch\n'
+     'python currents.py verify · crosscheck · station_check\n'
+     'python tools/projection_accuracy.py',
      'Extraction skips days already cached, so adding a day costs only that day. compare_fits '
      'reports what a new fit would change before anything is adopted.')
 para('Adoption is a deliberate step, not an automatic one: a fresh fit is compared against the '

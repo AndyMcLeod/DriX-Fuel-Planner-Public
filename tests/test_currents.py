@@ -505,6 +505,47 @@ class TestFieldProjection(CacheCase):
         self.assertEqual((f.covered, f.estimated), (0, 0))
 
 
+class TestProjectionAccuracyBlock(unittest.TestCase):
+    """`PROJECTION_ACCURACY` is what the documents quote, so it is pinned here.
+
+    Deliberately NOT a docx/pdf reader: the planner's suite is standard library
+    only, and a test needing PyMuPDF would break that. The generated documents
+    read this block at build time, so pinning the block is what stops a document
+    quoting a cap the code does not enforce. Staleness of the documents
+    themselves is caught by rebuild-and-diff, not from here."""
+
+    A = ofs.PROJECTION_ACCURACY
+
+    def test_it_covers_exactly_the_cycles_the_code_will_project(self):
+        """One row per reachable cycle. A cap raised without re-measuring would
+        otherwise ship a document justifying a reach nobody checked."""
+        self.assertEqual(sorted(self.A['projected_rms_kt']),
+                         list(range(1, ofs.MAX_PROJECT_CYCLES + 1)))
+
+    def test_the_projection_beats_both_things_it_replaces(self):
+        """The whole argument for projecting rather than refusing. If this ever
+        stops holding, the feature is wrong, not the document."""
+        worst_projection = max(self.A['projected_rms_kt'].values())
+        self.assertLess(worst_projection, min(self.A['persistence_rms_kt']))
+        self.assertLess(worst_projection, min(self.A['slack_rms_kt']))
+
+    def test_it_names_the_cycle_and_date_it_was_measured_on(self):
+        """A measurement without its provenance is an assertion. The tool that
+        re-measures compares against this and says so when they differ."""
+        self.assertTrue(self.A['cycle'].startswith('dbofs_'))
+        self.assertRegex(self.A['measured_utc'], r'^\d{4}-\d{2}-\d{2}$')
+        self.assertGreater(self.A['samples'], 0)
+
+    def test_the_tool_that_re_measures_it_exists(self):
+        """It is named in the block's own comment and in the methods document's
+        appendix; a note pointing at a missing tool is worse than no note."""
+        tool = (Path(__file__).resolve().parent.parent / 'tools'
+                / 'projection_accuracy.py')
+        self.assertTrue(tool.exists(), f'{tool} is referenced but missing')
+        src = tool.read_text(encoding='utf-8')
+        self.assertIn('PROJECTION_ACCURACY', src)
+
+
 class TestCurrentsDocument(unittest.TestCase):
     """`docs/CURRENTS.md` quotes numbers a reader acts on, so they are pinned.
 

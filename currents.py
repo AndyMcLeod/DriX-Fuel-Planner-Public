@@ -86,6 +86,26 @@ MAX_PROJECT_CYCLES = 3
 NOWCAST_H = 6
 FORECAST_H = 48
 
+# What a projection is WORTH, measured rather than asserted. Each value is the
+# RMS vector error in knots of substituting the value n whole M2 periods away,
+# checked against this model's OWN output across points in the operating area.
+#
+# It lives here rather than in a document so no document can drift from it, and
+# it carries its provenance for the same reason every model.json block does.
+# Re-measure with `python tools/projection_accuracy.py` when a materially
+# different cycle is cached; `cycle` records what these came from.
+PROJECTION_ACCURACY = {
+    'cycle': 'dbofs_20260813_t00z',
+    'measured_utc': '2026-08-13',
+    'samples': 258,
+    'projected_rms_kt': {1: 0.19, 2: 0.14, 3: 0.21},
+    'persistence_rms_kt': [0.57, 2.21],   # holding the last value, across points
+    'slack_rms_kt': [0.36, 1.46],         # assuming no current at all
+    'note': 'Flat out to three cycles because a tide repeats rather than decays. '
+            'At the bay entrance, where it runs to 2.2 kt, a projection lands '
+            'within 0.27 kt while persistence is wrong by the whole tide.',
+}
+
 
 # --------------------------------------------------------------------------- #
 #  DAP2 — the minimum needed to pull a hyperslab out of a THREDDS server.

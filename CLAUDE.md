@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 396 tests — must stay green
+python -m unittest discover -s tests      # 400 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **396 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **400 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -1501,15 +1501,20 @@ spacer and the amber cell runs entirely.
 
 ## Documents
 
-**⚠ THE FOUR GENERATED DOCUMENTS PREDATE THE CURRENTS AND GEOMETRY WORK.** They
-were last built at `8c15539`, before `47734cf` landed the forecast currents, and
-they say nothing about currents, mission geometry, turn costs or projection.
-They are not WRONG — nothing in them was invalidated — but they are silent on
-everything since 2026-08-12. Bringing them current means extending the builders
-(a currents chapter belongs in the Methods document, whose subject is exactly
-"how the data is acquired and how it reaches the numbers") **and re-exporting
-each PDF by hand from Word**, which no script can do. Until then
-`docs/CURRENTS.md` carries that material.
+**PDF EXPORT IS NO LONGER MANUAL (2026-08-13).**
+`powershell -File tools/export_pdf.ps1` drives Word the way `bake_toc.ps1`
+already does, refreshes any TOC field first, and **verifies each PDF by reading
+back its page count and byte size** rather than trusting the export call — a
+zero-page PDF saves happily. Run it after any rebuild. That closes the gap that
+let a PDF sit stale against the `.docx` it is named after.
+
+**⚠ TWO GENERATED DOCUMENTS STILL PREDATE THE CURRENTS AND GEOMETRY WORK.**
+`DriX_Fuel_Efficiency_Report` and `DriX8_Fuel_Gauge_Linearity` were last built at
+`8c15539`, before `47734cf` landed the forecast currents, and say nothing about
+currents, mission geometry, turn costs or projection. They are not WRONG —
+nothing in them was invalidated — but they are silent on everything since
+2026-08-12. **The Methods document IS current**: it gained §7 on 2026-08-13, and
+the endurance sheet is unaffected by any of it.
 
 - **`CURRENTS.md`** — acquisition and model integration end to end: the OPeNDAP
   product choice and why the regridded one, what a cycle is, cycle selection and
@@ -1524,11 +1529,21 @@ each PDF by hand from Word**, which no script can do. Until then
   the reserve band has never been calibrated. Regenerate with
   `python tools/build_gauge_report.py` — it recomputes the significance test, so
   if accumulating data ever makes the non-linearity real, the document says so.
-- `DriX8_Fuel_Methods.docx` / `.pdf` — 10 pages: which ROS 2 topics feed the
-  endurance numbers and exactly how they are produced (extraction, segmentation,
-  binning, fitting, derived quantities, verification, limits). Regenerate with
-  `python tools/build_methods_doc.py`; every figure is read from the pipeline
-  output so it cannot drift.
+- `DriX8_Fuel_Methods.docx` / `.pdf` — **12 pages** (10 until §7 landed): which
+  ROS 2 topics feed the endurance numbers and exactly how they are produced
+  (extraction, segmentation, binning, fitting, derived quantities), then **§7
+  Currents from the NOAA forecast** — product choice, cycle shape, the
+  out-of-range ladder, the measured projection table, the two seams a current
+  reaches a plan through, and a worked example — then verification (§8) and
+  limits (§9). Regenerate with `python tools/build_methods_doc.py`, then
+  `tools/export_pdf.ps1`; every figure is read from the pipeline output, and
+  §7's from `currents.py` itself (`NOWCAST_H`, `FORECAST_H`,
+  `MAX_PROJECT_CYCLES`, `M2_PERIOD_H`, `PROJECTION_ACCURACY`), so neither can
+  drift. **§7 needs no cached cycle and no network** — a fresh clone builds it.
+  **Renumbering hazard:** inserting §7 pushed Verification to 8 and Limits to 9,
+  and a cross-reference inside §7.4 still pointed at the old §8. Nothing caught
+  that but rasterising the page and reading it, which is why that step is not
+  optional here.
 - `DriX_Fuel_Efficiency_Report.docx` / `.pdf` — 28 pages: derivations, the
   gondola attribution (§5), the MCAP refit (§5.5), tank investigation (§6),
   sea-state treatment (§7), planning framework (§8), data-quality register

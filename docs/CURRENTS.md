@@ -3,6 +3,11 @@
 How a tidal current gets from a NOAA model into a fuel plan, what it is allowed
 to change on the way, and what it is not.
 
+> **Where this sits.** `DriX8_Fuel_Methods.docx` §7 is the same material for a
+> reader who wants it beside the endurance method, generated from the same
+> constants so the two cannot disagree. This file is the working version — a bit
+> longer, and editable without a rebuild.
+
 This is the **only part of the planner that touches the network**. Everything
 else — the fuel law, the gauge profile, the reserve arithmetic, the whole
 `model.json` — runs offline and is unaffected by anything in this document. If
