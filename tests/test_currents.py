@@ -430,6 +430,81 @@ class TestProjectionOutsideTheSpan(CacheCase):
         self.assertNotIn('estimated_legs', prov)
 
 
+class TestFieldProjection(CacheCase):
+    """The along-track field projects too, and counts what it borrowed.
+
+    This path matters more than the per-leg one: a survey held on one ground
+    through a turning tide is exactly what the field exists for, so losing its
+    tail to the forecast horizon puts the leg back on a single averaged number
+    at the point the tide is doing the most."""
+
+    def setUp(self):
+        super().setUp()
+        from engine import Environment
+        self.tag = build_cache(
+            self.cache, [uniform(float(k), 0.0) for k in range(24)])
+        self.cur = ofs.Currents(self.tag, self.cache)
+        self.base = Environment(wmo_sea_state=2)
+
+    def _field(self, **kw):
+        return ofs.env_factory(self.base, self.cur.start, tag=self.tag,
+                               cache=self.cache, **kw)
+
+    def test_a_run_past_the_end_is_answered_and_counted_as_estimated(self):
+        f = self._field()
+        past = (self.cur.end - self.cur.start).total_seconds() / 3600.0 + 1
+        env = f(38.2, -74.8, past)
+        self.assertIsNotNone(env, 'the tail of a mission should be projected')
+        self.assertEqual((f.asked, f.covered, f.estimated), (1, 1, 1))
+        self.assertAlmostEqual(f.projected_hours, ofs.M2_PERIOD_H, places=6)
+
+    def test_a_run_inside_the_span_is_not_counted_as_estimated(self):
+        f = self._field()
+        self.assertIsNotNone(f(38.2, -74.8, 2.0))
+        self.assertEqual((f.covered, f.estimated), (1, 0))
+        self.assertEqual(f.projected_hours, 0.0)
+
+    def test_projection_off_restores_the_old_drop(self):
+        f = self._field(project=False)
+        past = (self.cur.end - self.cur.start).total_seconds() / 3600.0 + 1
+        self.assertIsNone(f(38.2, -74.8, past))
+        self.assertEqual((f.asked, f.covered, f.estimated), (1, 0, 0))
+
+    def test_land_is_still_dropped_however_the_time_is_shifted(self):
+        from engine import Environment
+        dry = ofs.env_factory(
+            Environment(wmo_sea_state=2), self.cur.start,
+            tag=build_cache(self.cache, [uniform(1.0, 0.0)] * 24,
+                            mask=[0] * 25, tag='dbofs_20260813_t18z'),
+            cache=self.cache)
+        self.assertIsNone(dry(38.2, -74.8, 30.0))
+        self.assertEqual((dry.covered, dry.estimated), (0, 0))
+
+    def test_estimated_never_exceeds_covered(self):
+        """`covered` must keep meaning "the field answered", with `estimated`
+        the subset that was borrowed — reporting only the first would let a
+        projected tail read as full forecast coverage."""
+        f = self._field()
+        span_h = (self.cur.end - self.cur.start).total_seconds() / 3600.0
+        # FAR before NEAR deliberately: with the furthest borrow last, keeping a
+        # running max and simply assigning the latest are indistinguishable, and
+        # the mutation that drops the max survives.
+        for h in (1.0, span_h + 13, span_h + 1, 5.0):
+            f(38.2, -74.8, h)
+        self.assertEqual(f.asked, 4)
+        self.assertEqual(f.covered, 4)
+        self.assertEqual(f.estimated, 2)
+        self.assertLessEqual(f.estimated, f.covered)
+        self.assertAlmostEqual(f.projected_hours, 2 * ofs.M2_PERIOD_H, places=6)
+
+    def test_past_the_projection_limit_the_field_drops_rather_than_guessing(self):
+        f = self._field()
+        span_h = (self.cur.end - self.cur.start).total_seconds() / 3600.0
+        self.assertIsNone(f(38.2, -74.8, span_h
+                            + ofs.MAX_PROJECT_CYCLES * ofs.M2_PERIOD_H + 2))
+        self.assertEqual((f.covered, f.estimated), (0, 0))
+
+
 class TestRemoteCycleLookup(unittest.TestCase):
     """Which cycle NOAA would have, worked out from the catalog alone.
 

@@ -284,6 +284,13 @@ last value. Every estimated leg is flagged in the response, named in the note
 and marked in the report — and past three tidal cycles it stops estimating and
 says so. A position with no model water is still left empty whatever the time.
 
+**Reading currents along the track** does the same, and it matters more there: a
+survey held on one ground through a turning tide is what the field exists for,
+so losing its tail to the forecast horizon would put the leg back on a single
+averaged number at the point the tide is doing the most. The plan reports how
+many sampled runs the field answered for and how many of those were estimated,
+and says so in its warnings.
+
 `currents.py` is the module behind it — standard library, no new dependency —
 and it is a usable tool on its own:
 

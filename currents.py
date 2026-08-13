@@ -842,7 +842,7 @@ def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
     return out, prov
 
 
-def env_factory(base_env, departure, tag=None, cache=None):
+def env_factory(base_env, departure, tag=None, cache=None, project=True):
     """An `env_at(lat, lon, hours)` for `engine.plan()`.
 
     This is the seam that turns the current from a per-leg NUMBER into a
@@ -852,11 +852,20 @@ def env_factory(base_env, departure, tag=None, cache=None):
     forecast says there and then.
 
     Returns None when the forecast cannot answer, and the engine falls back to
-    the leg's own current. That is deliberate: a mission running past the end
-    of the forecast, or a line over a shoal the model calls land, degrades to
-    the number an operator typed rather than failing the plan or silently
-    planning slack water. `env_at.covered` / `.asked` record how much of the
-    mission the field actually answered for, so a surface can say so.
+    the leg's own current. That is deliberate: a line over a shoal the model
+    calls land degrades to the number an operator typed rather than failing the
+    plan or silently planning slack water. `env_at.covered` / `.asked` record
+    how much of the mission the field actually answered for, so a surface can
+    say so.
+
+    **A run past the end of the forecast is PROJECTED rather than dropped**
+    (`project=True`), by the same whole-tidal-cycle rule `at_best` uses — which
+    matters more here than on the per-leg path, because a survey held on one
+    ground through a turning tide is exactly the case the field exists for, and
+    losing its tail to the horizon puts the leg back on a single averaged number
+    at the point the tide is doing the most. `env_at.estimated` counts those
+    runs and `.projected_hours` is the furthest any of them reached, so
+    `covered` never passes a borrowed value off as a forecast one.
 
     `dataclasses.replace` rather than an import of Environment: the engine
     does not import this module and this module should not import the engine
@@ -866,18 +875,30 @@ def env_factory(base_env, departure, tag=None, cache=None):
 
     def env_at(lat, lon, hours):
         env_at.asked += 1
+        when = departure + timedelta(hours=hours)
         try:
-            got = cur.at(lat, lon, departure + timedelta(hours=hours))
+            if project:
+                got, shift = cur.at_best(lat, lon, when)
+            else:
+                got, shift = cur.at(lat, lon, when), 0.0
         except ValueError:
-            return None                      # past the end of the forecast
+            return None                      # past even the projection's reach
         if got is None:
             return None                      # land, or outside the domain
         env_at.covered += 1
+        if shift:
+            # Counted, not just tolerated: `covered` alone would report a
+            # projected run as though the forecast had answered for it, which is
+            # the difference between a field and a guess dressed as one.
+            env_at.estimated += 1
+            env_at.projected_hours = max(env_at.projected_hours, abs(shift))
         return dataclasses.replace(base_env, current_speed_kt=got[0],
                                    current_set_deg=got[1])
 
     env_at.asked = 0
     env_at.covered = 0
+    env_at.estimated = 0
+    env_at.projected_hours = 0.0
     env_at.tag = cur.tag
     env_at.label = (f'{cur.meta["ofs"].upper()} {cur.meta["date"]} '
                     f't{cur.meta["cycle"]} surface forecast')

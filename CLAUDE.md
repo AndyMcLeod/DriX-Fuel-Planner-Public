@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 383 tests — must stay green
+python -m unittest discover -s tests      # 389 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **383 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **389 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -712,10 +712,34 @@ unchanged and still raises** — it is the truthful primitive every existing rai
 is built on, and projection is an explicit opt-in beside it rather than a
 loosening of it.
 
+**The along-track field projects too** (`env_factory(..., project=True)`,
+2026-08-13). It matters MORE here than on the per-leg path: a survey held on one
+ground through a turning tide is exactly what the field exists for, so losing
+its tail to the horizon puts the leg back on a single averaged number at the
+point the tide is doing the most. `env_at.estimated` counts the borrowed runs
+and `.projected_hours` is the furthest any reached, so **`covered` never passes
+a borrowed value off as a forecast one** — reporting only `covered` would let a
+projected tail read as full coverage. `/api/plan`'s `currents_field` carries
+both, and the UI renders that block as plan warnings; it had been a payload key
+nothing displayed at all.
+
 **A bug this caught on the way in, worth knowing:** `cycle_span` counted nowcast
 frames with `'.n' in name`, and every one of those files ends `.nc` — so all 54
 counted as nowcast and the computed span landed two days early. A test found it;
 a substring test on a filename extension is the shape to distrust.
+
+**⚠ AND A MUTATION-RUNNER TRAP — read this before writing another one.** A
+mutation run left a **stale `.pyc`** that kept executing after the source was
+correctly restored. Python invalidates bytecode on *(whole-second mtime, size)*;
+a mutation and its restore land inside the same second, and `if shift:` and
+`if False:` are **the same length**, so the cache compiled from the MUTATED
+source looked valid against the restored file. The symptom is maddening: `git
+diff` clean, source byte-identical, `inspect.getsource` showing exactly the
+right code, and tests failing against code no longer on disk. **Run every
+mutation subprocess with `PYTHONDONTWRITEBYTECODE=1`.** Same family as the
+killed-runner lesson: a mutation runner can leave the repo lying to you in more
+than one way, and this one fakes a survivor as readily as a failure — so a
+clean-looking mutation report from a runner without that flag is not evidence.
 
 ### What it does NOT fix
 

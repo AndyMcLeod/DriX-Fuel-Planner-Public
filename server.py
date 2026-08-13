@@ -653,9 +653,20 @@ class Handler(BaseHTTPRequestHandler):
                               waypoint_unit=unit, env_at=env_at)
                 payload = result.to_dict()
                 if env_at is not None:
-                    payload['currents_field'] = {
-                        'label': env_at.label, 'tag': env_at.tag,
-                        'asked': env_at.asked, 'covered': env_at.covered}
+                    field = {'label': env_at.label, 'tag': env_at.tag,
+                             'asked': env_at.asked, 'covered': env_at.covered}
+                    # `covered` counts runs the field answered for; `estimated`
+                    # says how many of those answers were borrowed rather than
+                    # forecast. Reporting only the first would let a projected
+                    # tail read as full coverage.
+                    if env_at.estimated:
+                        field['estimated'] = env_at.estimated
+                        field['projected_hours'] = round(env_at.projected_hours, 2)
+                        field['label'] += (
+                            f' — {env_at.estimated} of {env_at.covered} runs '
+                            f'ESTIMATED, projected up to '
+                            f'{env_at.projected_hours:.1f} h across tidal cycles')
+                    payload['currents_field'] = field
                 if field_note:
                     payload['currents_field'] = {'error': field_note}
                 # The report is a CONVENIENCE, not part of the answer: a full

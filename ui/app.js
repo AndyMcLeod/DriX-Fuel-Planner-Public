@@ -1059,11 +1059,30 @@ function render(p) {
     currentTile(p.legs),
   ].join('');
 
+  // The along-track field's own coverage joins the plan's warnings rather than
+  // living in a payload key nothing rendered. A tail of the mission answered by
+  // projection is exactly the thing an operator must not have to go looking for.
+  const field = p.currents_field || {};
+  const fieldWarnings = [];
+  if (field.estimated) {
+    fieldWarnings.push(
+      `CURRENTS: ${field.estimated} of ${field.covered} sampled runs are `
+      + `ESTIMATED — projected up to ${field.projected_hours} h across tidal `
+      + `cycles from outside the forecast. Typically within about 0.2 kt`);
+  }
+  if (field.asked && field.covered < field.asked) {
+    fieldWarnings.push(
+      `CURRENTS: the forecast answered for ${field.covered} of ${field.asked} `
+      + `sampled runs — the rest used the leg's own typed current`);
+  }
+  if (field.error) fieldWarnings.push(`CURRENTS: ${field.error}`);
+
+  const all = p.warnings.concat(fieldWarnings);
   const warn = $('warnings');
-  warn.innerHTML = p.warnings.map(
+  warn.innerHTML = all.map(
     (w) => `<li class="${/^(PLAN |GAUGE )/.test(w) ? 'bad' : ''}">${escapeHtml(w)}</li>`
   ).join('');
-  $('warnCard').hidden = p.warnings.length === 0;
+  $('warnCard').hidden = all.length === 0;
 
   const tb = $('legTable').querySelector('tbody');
   tb.innerHTML = p.legs.map((l) => `
