@@ -21,6 +21,7 @@ The rendered geometry was checked by hand.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import unittest
@@ -28,7 +29,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-UI = Path(__file__).resolve().parent.parent / 'ui'
+ROOT = Path(__file__).resolve().parent.parent
+UI = ROOT / 'ui'
+# Read rather than hardcoded: a coefficient that moves must surface in the tests
+# that depend on it, not be silently disagreed with.
+MODEL = json.loads((ROOT / 'model.json').read_text(encoding='utf-8'))
 
 # The mission is flown in this order, so the form is authored and tabbed in it.
 MISSION_ORDER = ['Transit out', 'Survey', 'Transit home']
@@ -300,6 +305,40 @@ class TestSurveySpacingUnit(unittest.TestCase):
         out = out[:out.index('\nfunction ')]
         self.assertIn('m apart', out)
         self.assertNotIn('NM apart', out)
+
+    def test_the_spacing_defaults_to_50_m(self):
+        tag = self.html[self.html.index('id="patSpacing"'):]
+        tag = tag[:tag.index('>')]
+        self.assertIn('value="50"', tag)
+
+    def test_clearing_the_geometry_returns_the_spacing_to_its_default(self):
+        """What makes 50 a DEFAULT and not merely a starting value. Read off the
+        input's own `defaultValue`, i.e. the markup attribute, so the number
+        lives in exactly one place and the two cannot drift.
+
+        Safe because a spacing alone generates nothing: `surveyPattern()`
+        returns null without an anchor."""
+        for fn in ('function clearGeometry()', 'target === \'survey\''):
+            block = self.js[self.js.index(fn):]
+            block = block[:block.index('refreshPattern()') if fn.startswith('function')
+                          else block.index('surLines')]
+            self.assertIn("$('patSpacing').value = $('patSpacing').defaultValue",
+                          block, f'spacing is not restored in {fn}')
+            self.assertNotIn("'patSpacing'].forEach", block)
+
+    def test_the_default_sits_just_below_the_turn_threshold(self):
+        """50 m is 4 mm UNDER twice the modelled turn radius (50.004 m), so it
+        takes the omega-turn branch rather than the half-circle one. The cost is
+        2x4 mm of extra path per turn — nothing — but it is a real property of
+        the default and looks like a bug to whoever notices it next. Pinned so
+        that a change to `turn_model.radius_nm` surfaces here rather than
+        silently moving which side of the discontinuity the default lands on."""
+        radius_nm = MODEL['turn_model']['radius_nm']
+        two_r_m = 2 * radius_nm * 1852.0
+        self.assertAlmostEqual(two_r_m, 50.004, places=3)
+        self.assertLess(50.0, two_r_m, 'the 50 m default is no longer below 2r')
+        self.assertLess(two_r_m - 50.0, 0.01,
+                        'the default has drifted meaningfully off the threshold')
 
     def test_the_box_accepts_a_fractional_spacing(self):
         """A spacing usually comes off a swath calculation and lands on

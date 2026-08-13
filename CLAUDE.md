@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 366 tests — must stay green
+python -m unittest discover -s tests      # 369 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **366 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **369 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -469,7 +469,25 @@ something like 62.5 m, which an integer step would reject at submit with a
 browser message rather than a useful one. **A unit seam fails silently and
 plausibly** — get it wrong by 1852 and the lines are still drawn, still
 parallel, still the right count — so the conversion, the label and the readout
-are pinned together in `TestSurveySpacingUnit`, mutation-checked 6/6.
+are pinned together in `TestSurveySpacingUnit`, mutation-checked 6/6, and the default by a further 6/6.
+
+**The box DEFAULTS to 50 m (Andy, 2026-08-13)**, and both "Clear all geometry"
+and a line-plan import put it *back* to 50 rather than blanking it — which is
+what makes it a default and not merely a starting value. Both read the input's
+own `defaultValue`, i.e. the markup attribute, so the number lives in exactly
+one place; retyping it as a JS literal is a mutation the suite catches.
+Restoring is safe because a spacing alone generates nothing — `surveyPattern()`
+returns null without an anchor, so a populated box can never produce a survey by
+itself.
+
+**⚠ The default sits 4 mm INSIDE the omega-turn branch, and that is not a bug.**
+`turn_model.radius_nm` is 0.0135, so 2r is **50.004 m**: a 50 m spacing is
+fractionally under the threshold and takes the run-out-and-back path rather than
+the half circle. Measured live — 50 m costs **54.475224 L** against
+**54.475206 L** at 50.004 m and above, i.e. **18 microlitres** over a 12 × 10 NM
+survey. A test reads the radius out of `model.json` and pins the relationship,
+so if that coefficient ever moves the change surfaces there rather than silently
+flipping which side of the discontinuity the default lands on.
 
 **Worth knowing when testing it: spacing only changes the answer BELOW 50 m.**
 `TurnModel.path_nm` returns a flat half-circle for any spacing ≥ 2r, and r is

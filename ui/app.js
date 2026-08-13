@@ -217,10 +217,11 @@ const TIPS = {
     'Bearing of line 1 in degrees true. Alternate lines run the reciprocal, '
     + 'each starting where the last finished.',
   '#patSpacing':
-    'Distance between adjacent survey lines, in METRES. It reaches the planner '
-    + 'as nautical miles — 185 m is a tenth of a mile — and the turn between '
-    + 'lines is costed from it: below twice the turn radius the boat cannot '
-    + 'hold a half circle and pays for a wider one.',
+    'Distance between adjacent survey lines, in METRES; it reaches the planner '
+    + 'as nautical miles. The turn between lines is costed from it — below '
+    + 'twice the modelled turn radius (50.0 m) a 180° will not fit, and the '
+    + 'boat runs out past the line end and back, which costs more. Spacing '
+    + 'makes no difference to the plan above that.',
   '#patOut':
     'The pattern this anchor produces, using the line count and length from the '
     + 'survey leg below — there is one place to change them.',
@@ -677,8 +678,15 @@ function fmtDeg(d) {
 function clearGeometry() {
   importedLines = null;
   importedSummary = null;
-  ['outTrack', 'homeTrack', 'patLat', 'patLon', 'patBearing', 'patSpacing']
+  ['outTrack', 'homeTrack', 'patLat', 'patLon', 'patBearing']
     .forEach((id) => { $(id).value = ''; });
+  // Spacing goes back to its DEFAULT rather than blank, which is what makes 50 m
+  // a default and not just a starting value. `defaultValue` is the markup's own
+  // `value` attribute, so the number lives in exactly one place and this cannot
+  // drift from it. Blanking it is safe but unhelpful: a cleared pattern still
+  // needs an anchor before it plans anything, so the spacing sitting at 50 can
+  // never produce a survey on its own.
+  $('patSpacing').value = $('patSpacing').defaultValue;
   $('useField').checked = false;
   $('planOut').textContent = '';
   $('planOut').className = 'note';
@@ -719,9 +727,10 @@ async function importLinePlan() {
       importedSummary = s;
       // The imported lines replace the generated pattern, so clear the
       // pattern fields rather than leaving two sources of truth on screen.
-      ['patLat', 'patLon', 'patBearing', 'patSpacing'].forEach((id) => {
-        $(id).value = '';
-      });
+      // Spacing returns to its default here for the same reason it does in
+      // clearGeometry — without an anchor it generates nothing either way.
+      ['patLat', 'patLon', 'patBearing'].forEach((id) => { $(id).value = ''; });
+      $('patSpacing').value = $('patSpacing').defaultValue;
       $('surLines').value = s.lines;
       if (s.mean_line_nm) $('surRange').value = s.mean_line_nm.toFixed(3);
       // The FIRST line's heading, not an average of them. A lawnmower's
