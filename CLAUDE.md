@@ -1508,13 +1508,23 @@ back its page count and byte size** rather than trusting the export call — a
 zero-page PDF saves happily. Run it after any rebuild. That closes the gap that
 let a PDF sit stale against the `.docx` it is named after.
 
-**⚠ TWO GENERATED DOCUMENTS STILL PREDATE THE CURRENTS AND GEOMETRY WORK.**
-`DriX_Fuel_Efficiency_Report` and `DriX8_Fuel_Gauge_Linearity` were last built at
-`8c15539`, before `47734cf` landed the forecast currents, and say nothing about
-currents, mission geometry, turn costs or projection. They are not WRONG —
-nothing in them was invalidated — but they are silent on everything since
-2026-08-12. **The Methods document IS current**: it gained §7 on 2026-08-13, and
-the endurance sheet is unaffected by any of it.
+**ALL FOUR DOCUMENTS ARE CURRENT AS OF 2026-08-13**, rebuilt and re-exported
+together. **Rebuild-and-diff first, always** — it is what settles whether a
+document is stale, and it settled two questions here before a word was written:
+against its committed copy the Efficiency Report differed by SIX text lines, all
+version string and build date, and the Gauge report by TWO, the date alone. **No
+figure had moved in either**, so neither was wrong; both were merely silent. In
+particular the turn model did NOT shift the Report's numbers, because its tables
+describe surveys as line count and line length with no geometry, and a turn is
+only charged where geometry exists — which is now said in §8.5 so a reader is not
+surprised when the tool quotes more for the same survey.
+
+**The Gauge report deliberately gained no currents chapter.** Its subject is what
+a gauge point is worth, and the forecast work does not touch that. Padding a
+focused document to make it look updated is worse than leaving it alone, so it
+states its scope in one paragraph of the appendix instead — a reader arriving
+from the planner's documentation can then tell "not about this" from "left
+behind". Resist the urge to cross-post material into it.
 
 - **`CURRENTS.md`** — acquisition and model integration end to end: the OPeNDAP
   product choice and why the regridded one, what a cycle is, cycle selection and
@@ -1544,10 +1554,17 @@ the endurance sheet is unaffected by any of it.
   and a cross-reference inside §7.4 still pointed at the old §8. Nothing caught
   that but rasterising the page and reading it, which is why that step is not
   optional here.
-- `DriX_Fuel_Efficiency_Report.docx` / `.pdf` — 28 pages: derivations, the
-  gondola attribution (§5), the MCAP refit (§5.5), tank investigation (§6),
-  sea-state treatment (§7), planning framework (§8), data-quality register
-  (§9). Regenerate with `python tools/build_report.py` — **it had no builder
+- `DriX_Fuel_Efficiency_Report.docx` / `.pdf` — **30 pages** (28 until §8.5):
+  derivations, the gondola attribution (§5), the MCAP refit (§5.5), tank
+  investigation (§6), sea-state treatment (§7), planning framework (§8),
+  data-quality register (§9). **§8.5 "The tide as a planning input"** landed
+  2026-08-13 — what the forecast is worth on a real mission (5.2% per leg
+  against 2.7% sampled along the track), the double-count caution, and why a
+  geometry plan in the tool reads higher than the tables here. The register
+  gained four NOAA rows. **⚠ RENUMBERING: the old §8.5 "The tool" is now §8.6,
+  and `check_test_claims()` names that section in three error messages** — they
+  were retargeted with it, and they are the thing to grep if §8 is ever
+  reordered again. Regenerate with `python tools/build_report.py` — **it had no builder
   until v2.4.0, which is exactly why it was the document that drifted.** Every
   derived figure is recomputed at build time from `model.json` and the fit
   JSON, and the planning tables come from calling the engine rather than

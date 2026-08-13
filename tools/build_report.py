@@ -280,7 +280,7 @@ W40_G = plan(WORK_LEGS, WORK_ENV, Vessel(GAUGE_CAP, RESERVE, gondola='em2040'), 
 
 
 def check_test_claims():
-    """§8.5 claims the engine has a test suite with mutation guards. Verify the
+    """§8.6 claims the engine has a test suite with mutation guards. Verify the
     claim; do not print a count.
 
     An exact figure was quoted here at first, discovered at build time so it
@@ -306,10 +306,10 @@ def check_test_claims():
 
     walk(suite)
     if not ids:
-        raise RuntimeError('no tests discovered — §8.5 claims a test suite exists')
+        raise RuntimeError('no tests discovered — §8.6 claims a test suite exists')
     guards = [i for i in ids if 'mutation' in i.lower() or 'perturb' in i.lower()]
     if not guards:
-        raise RuntimeError('no mutation guards found — §8.5 claims they exist. '
+        raise RuntimeError('no mutation guards found — §8.6 claims they exist. '
                            'Either they were removed or they were renamed; the '
                            'report must not go on asserting them either way.')
     return len(ids), len(guards)
@@ -1333,7 +1333,40 @@ para(f'The same mission on the EM712 gondola costs {W712.total_litres:.1f} L aga
      f'modest mission, and with '
      f'{"extrapolation flags on " + ", ".join(W712.extrapolated_legs) if W712.extrapolated_legs else "no extrapolation flags"}.')
 
-h2('8.5  The tool')
+h2('8.5  The tide as a planning input')
+para('Since 2026-08-13 the per-leg current need not be typed from a tide table: it can be '
+     'read off the NOAA Delaware Bay operational forecast, sampled along each leg at the '
+     'time the vehicle would be there. This changes no coefficient in this report. It '
+     'supplies two inputs the framework above already had — a leg\'s current speed and '
+     'set — so the arithmetic is identical to an operator entering them by hand, and a '
+     'plan made without pressing the button is unaffected.')
+para('What it is worth is worth stating, because it is larger than most of the '
+     'sensitivities in §7. On a real mission out of the operating base — twelve miles '
+     'out, a 12 × 2 NM survey, twelve miles home, departing at midday — the tide costs '
+     '5.2% of mission fuel against planning it as slack water. Sampling the forecast '
+     'along the track instead of once per leg gives 2.7%, roughly half: a survey holds '
+     'one ground for hours while the tide turns under it, and a single vector average '
+     'of a reversing current overstates what the hull actually fights. The mission clock '
+     'is identical in both cases, which follows from §8.3 — a current moves the fuel and '
+     'never the time.')
+callout('Two cautions that belong with the number',
+        'It is partly counted twice. The speed law in §3 is fitted against speed over '
+        'ground in an unrecorded tide, so some tidal effect is already inside the '
+        'coefficients; applying a forecast current on top counts part of it again. The '
+        'honest use is comparing two plans, or pricing today\'s tide — not treating the '
+        'result as a calibrated tidal correction. Removing the overlap needs the same '
+        'reciprocal-heading runs §5.2 and the register already ask for. And a forecast '
+        'is a model, not a measurement: where it cannot reach a requested time the '
+        'planner estimates by borrowing across whole tidal cycles, which it marks as an '
+        'estimate everywhere it appears rather than presenting it as forecast.')
+para('One consequence for reading this report against the tool. Where a survey is given '
+     'real geometry, the planner now also charges the TURNS between lines, from an '
+     'assumed turn model. The tables in this report describe surveys as line count and '
+     'line length without geometry, so they carry no turn cost and are unchanged by it; '
+     'a geometry-based plan in the tool will therefore read slightly higher for the same '
+     'survey. That is the tool being more complete, not a disagreement.')
+
+h2('8.6  The tool')
 para(f'The framework above is implemented as a Python engine with a browser interface '
      f'at D:\\Claude\\Fuel, covered by a unit-test suite whose mutation guards fail if '
      f'a coefficient changes unnoticed. Three rails are built in deliberately: '
@@ -1381,6 +1414,18 @@ DQ = [
      'Wind model remains an assumption; the extractor announces the topic if it appears'),
     ('Exail ROE', 'Fuel cost in dollars with no unit price',
      'Kept in cost terms; litres cannot be recovered from it'),
+    ('NOAA forecast', 'A model output, not a measurement, and surface only',
+     'Used as an INPUT to a plan, never as evidence for a coefficient. Hourly on a '
+     '~500 m mesh at 0 m; the vehicle draws 2 m and no shear is modelled'),
+    ('NOAA forecast', 'Applying it double-counts against the SOG-fitted speed law',
+     'Stated on the leg, in §8.5 and here. Reciprocal-heading runs at steady RPM are '
+     'what would separate the two'),
+    ('NOAA forecast', 'The published archive is only about two days deep',
+     'A mission older than that cannot be answered exactly. Beyond it, and past the '
+     'forecast horizon, values are ESTIMATED by projection and flagged as such'),
+    ('NOAA forecast', 'A projected value is an estimate, not a forecast',
+     'Reaches at most three tidal cycles, measured at 0.14-0.21 kt RMS against the '
+     'model itself; refused beyond that. Never applied silently'),
 ]
 table(['#', 'Source', 'Issue', 'Handling'],
       [[str(i + 1), s, iss, hand] for i, (s, iss, hand) in enumerate(DQ)],
@@ -1543,7 +1588,11 @@ para('This document has no hand-written numbers. tools/build_report.py loads '
      'model.json and the MCAP fit output, recomputes every derived quantity, calls the '
      'planning engine for the planning tables, regenerates eleven of the twelve '
      'figures, and emits the document. Rebuild with:')
-mono('python tools/build_report.py')
+mono('python tools/build_report.py         [OUT.docx]\n'
+     'powershell -File tools/export_pdf.ps1',
+     'The PDF beside this document is a Word export of the same file, produced by the '
+     'second step. Skip it and the PDF goes stale against the document it is named '
+     'after, which is how a rebuilt report can still be read in its old form.')
 bullets([
     ('Source observations are inputs, not results. ',
      'The 2024 trial steps, the four-heading test, the DD2024 refuel and the Exail ROE '
@@ -1561,7 +1610,7 @@ doc.save(OUT)
 print('written:', OUT)
 print(f'  model v{D["version"]}  ·  gauge {LPP} L/pt  ·  mission fuel '
       f'{GAUGE_USABLE:.1f} L (reading {READING})  ·  B would be {GAUGE_USABLE_B:.1f} L')
-print(f'  §8.5 claims checked: {N_TESTS} tests, {N_GUARDS} mutation guards '
+print(f'  §8.6 claims checked: {N_TESTS} tests, {N_GUARDS} mutation guards '
       f'(counts are NOT written into the document — see check_test_claims)')
 
 # LIMITS — what this builder cannot regenerate, kept where it will be seen:

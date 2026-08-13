@@ -408,11 +408,20 @@ bullets([
 
 doc.add_heading('Appendix  —  Reproducing this report', level=1)
 mono('python tools/extract_bags.py D:/Claude/Fuel/D8_2040\n'
-     'python tools/build_gauge_report.py [OUT.docx]',
+     'python tools/build_gauge_report.py   [OUT.docx]\n'
+     'powershell -File tools/export_pdf.ps1',
      'The report recomputes every figure and every number from the day caches, so re-running it '
      'after adding data produces a corrected document rather than a stale one. The significance '
      'test in section 5 is part of that recomputation — if accumulating data ever makes the '
-     'band-to-band difference real, the document will say so.')
+     'band-to-band difference real, the document will say so. The PDF beside it is a Word export '
+     'of the same file, produced by the third step; skip it and the PDF goes stale against the '
+     'document it is named after, which is how a rebuilt report can still be read in its old '
+     'form.')
+para('Scope, stated so it is not mistaken for an omission: nothing here depends on the mission '
+     'planner, the tidal forecast, or the mission geometry the planner gained during August 2026. '
+     'Those change what a plan COSTS. They do not touch what a gauge point is worth, which is the '
+     'only question this report asks — so this document was not left behind by that work, it is '
+     'simply not about it.')
 
 check_table_widths(doc)
 doc.save(OUT)
