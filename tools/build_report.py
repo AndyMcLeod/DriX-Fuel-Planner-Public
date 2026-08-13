@@ -53,7 +53,7 @@ from drawdown import spec as _drawdown_spec  # noqa: E402
 FIGS = HERE / 'report_figs'
 FIGS.mkdir(exist_ok=True)
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (
-    HERE.parent / 'DriX_Fuel_Efficiency_Report.docx')
+    HERE.parent / 'docs' / 'DriX_Fuel_Efficiency_Report.docx')
 
 plt.rcParams.update(PLOT_RC)
 MS_KT = 3600.0 / 1852.0

@@ -5,3 +5,7 @@ tools/node_modules/
 tools/package-lock.json
 D8_2040/
 *.mcap
+# Mission reports are generated on every plan — an operator's own working
+# output, one file per press. The four DOCUMENTS in docs/ are tracked; these
+# are not, or the repo would fill with them.
+docs/missions/

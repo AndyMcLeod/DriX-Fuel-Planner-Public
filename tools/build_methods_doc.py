@@ -30,7 +30,7 @@ MODEL = json.load(open(HERE.parent / 'model.json'))
 # 25% reserve change was rebuilt everywhere except here, and only a text
 # search of the output caught it.
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (
-    HERE.parent / 'DriX8_Fuel_Methods.docx')
+    HERE.parent / 'docs' / 'DriX8_Fuel_Methods.docx')
 
 # -------------------------------------------------------------------- document
 S = new_document(headings=(('Heading 1', 15, ACCENT, 16, 8, True),

@@ -2,16 +2,25 @@
 
 Standard library only — no pip install, nothing to vendor, works offline.
 
-    python server.py            # serves on http://127.0.0.1:8765
+    python server.py                     # serves on http://127.0.0.1:8765
     python server.py --port 9000
-    python server.py --no-open  # don't launch a browser
+    python server.py --no-open           # don't launch a browser
+    python server.py --no-reports        # plan without writing mission reports
+    python server.py --report-dir PATH   # write them somewhere else
 
 Endpoints
     GET  /                  the UI
     GET  /static/<file>     UI assets
+    GET  /quickstart.md     docs/QUICKSTART.md, rendered by the help panel
     GET  /api/model         model.json, for populating defaults in the UI
     POST /api/plan          {environment, vessel, legs} -> full plan
     POST /api/max-survey    same body -> longest survey that holds the reserve
+
+EVERY SUCCESSFUL PLAN WRITES A MARKDOWN REPORT to `docs/missions/`, and the
+response carries its path. That is a side effect of a GET-shaped operation, so
+it is worth being plain about: one file per press of Plan mission, timestamped
+to the second, never overwritten. `--no-reports` turns it off; `--report-dir`
+moves it. A solve (`/api/max-survey`) writes nothing — it is not a mission.
 
 Bound to loopback deliberately: this is a planning aid on a laptop, not a
 service. Nothing here is authenticated.
@@ -27,13 +36,21 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import mission_report
 from engine import (DEFAULT_WAYPOINT_UNIT, Environment, Leg, Model, Vessel,
                     default_waypoints, load_model,
                     max_survey_length, max_survey_lines, plan)
 
 ROOT = Path(__file__).resolve().parent
 UI = ROOT / 'ui'
+DOCS = ROOT / 'docs'
 MAX_BODY = 256 * 1024
+
+# Where mission reports land, and whether they are written at all. Module-level
+# rather than baked in so `main()` can point them elsewhere and, more
+# importantly, so a TEST can point them at a temp directory — a suite that
+# exercised the real handler would otherwise litter the operator's own docs/.
+REPORT_DIR: Path | None = DOCS / 'missions'
 
 CONTENT_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -200,6 +217,37 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
     return legs, env, vessel, override, start_time, waypoints, unit
 
 
+def _write_report(result, unit: str, title: str) -> dict:
+    """Write the mission report and describe what happened.
+
+    Returns `{'written': bool, 'path': str|None, 'error': str|None}` — the UI
+    shows the path so an operator knows a file appeared, and the error so a
+    silent failure cannot masquerade as a saved report.
+    """
+    if REPORT_DIR is None:
+        return {'written': False, 'path': None, 'error': None}
+    try:
+        when = dt.datetime.now()
+        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        path = REPORT_DIR / mission_report.filename(result, when, title)
+        # Never clobber: two plans inside one second are two missions, and the
+        # earlier one is not scratch.
+        n = 2
+        while path.exists():
+            path = path.with_name(f'{path.stem}-{n}{path.suffix}')
+            n += 1
+        text = mission_report.render(result, generated=when,
+                                     waypoint_unit=unit, title=title)
+        path.write_text(text, encoding='utf-8', newline='\n')
+        try:
+            shown = str(path.relative_to(ROOT))
+        except ValueError:
+            shown = str(path)
+        return {'written': True, 'path': shown, 'error': None}
+    except OSError as exc:
+        return {'written': False, 'path': None, 'error': str(exc)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'DriXPlanner/1.0'
 
@@ -279,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
         # the app and the one in the repo cannot drift apart. Served from the
         # repo root rather than copied into ui/, for the same reason.
         if route == '/quickstart.md':
-            path = ROOT / 'QUICKSTART.md'
+            path = ROOT / 'docs' / 'QUICKSTART.md'
             if not path.is_file():
                 return self._error(404, 'quick start not found')
             return self._send(200, path.read_bytes(), 'text/markdown; charset=utf-8')
@@ -311,7 +359,14 @@ class Handler(BaseHTTPRequestHandler):
                 result = plan(legs, env, vessel, model, override,
                               start_time=start_time, waypoints=waypoints,
                               waypoint_unit=unit)
-                return self._json(200, result.to_dict())
+                payload = result.to_dict()
+                # The report is a CONVENIENCE, not part of the answer: a full
+                # disk or a read-only docs/ must not cost the operator their
+                # plan. Failures are reported in the payload and logged, never
+                # raised.
+                payload['report'] = _write_report(result, unit,
+                                                  str(body.get('title') or ''))
+                return self._json(200, payload)
 
             out = {'max_survey_nm': max_survey_length(legs, env, vessel, model,
                                                       override)}
@@ -328,12 +383,23 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    global REPORT_DIR
     ap = argparse.ArgumentParser(description='DriX fuel planner (local UI)')
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--no-open', action='store_true',
                     help='do not open a browser window')
+    ap.add_argument('--report-dir', default=None,
+                    help='where mission reports are written '
+                         f'(default {REPORT_DIR.relative_to(ROOT)})')
+    ap.add_argument('--no-reports', action='store_true',
+                    help='plan without writing a mission report')
     args = ap.parse_args()
+
+    if args.no_reports:
+        REPORT_DIR = None
+    elif args.report_dir:
+        REPORT_DIR = Path(args.report_dir).resolve()
 
     if not (UI / 'index.html').is_file():
         raise SystemExit(f'UI files missing — expected {UI / "index.html"}')
@@ -342,6 +408,8 @@ def main() -> None:
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f'http://{args.host}:{args.port}/'
     print(f'DriX fuel planner  ->  {url}')
+    print('mission reports  ->  '
+          + ('off' if REPORT_DIR is None else str(REPORT_DIR)))
     print('Ctrl-C to stop.')
     if not args.no_open:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()

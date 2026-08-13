@@ -28,7 +28,7 @@ CACHE = HERE / 'rosbags'
 FIGS = HERE / 'gauge_figs'
 FIGS.mkdir(exist_ok=True)
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (
-    HERE.parent / 'DriX8_Fuel_Gauge_Linearity.docx')
+    HERE.parent / 'docs' / 'DriX8_Fuel_Gauge_Linearity.docx')
 
 import json as _json
 with open(HERE.parent / 'model.json', encoding='utf-8') as _fh:

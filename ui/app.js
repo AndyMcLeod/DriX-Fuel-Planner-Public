@@ -486,6 +486,20 @@ function render(p) {
   // lost: it is the "Needle on return" tile, and `verdict` still drives the
   // banner — including `gauge_breach`, where the capacity row passes and the
   // needle does not. Verification rail 6 stays satisfied.
+
+  // Every plan writes a report to docs/missions/. Say so — a file appearing on
+  // the operator's disk should never be a surprise — and say it plainly when
+  // one could NOT be written, because a silently missing report is worse than
+  // no report at all.
+  const r = p.report;
+  const out = $('reportOut');
+  if (!r || (!r.written && !r.error)) {
+    out.textContent = '';
+  } else if (r.written) {
+    out.innerHTML = `Report saved to <code>${escapeHtml(r.path)}</code>`;
+  } else {
+    out.innerHTML = `<span class="bad">Report not saved: ${escapeHtml(r.error)}</span>`;
+  }
 }
 
 /** A duration as an operator says it: '0 min', '45 min', '1 h', '2 h 30 min'.

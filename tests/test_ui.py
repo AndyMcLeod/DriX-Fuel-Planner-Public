@@ -175,7 +175,7 @@ class TestQuickStart(unittest.TestCase):
     """
 
     ROOT = Path(__file__).resolve().parent.parent
-    DOC = ROOT / 'QUICKSTART.md'
+    DOC = ROOT / 'docs' / 'QUICKSTART.md'
 
     def setUp(self):
         self.text = self.DOC.read_text(encoding='utf-8')
@@ -210,11 +210,37 @@ class TestQuickStart(unittest.TestCase):
             self.assertEqual(line.count('`') % 2, 0,
                              f'unbalanced code span on QUICKSTART.md line {n}: {line!r}')
 
-    def test_the_server_serves_it_from_the_repo_root(self):
-        """Served, not copied into ui/ — a copy is a second thing to update."""
+    def test_the_server_serves_it_from_docs(self):
+        """Served from docs/, not copied into ui/ — a copy is a second thing to
+        update."""
         server = (self.ROOT / 'server.py').read_text(encoding='utf-8')
         self.assertIn("'/quickstart.md'", server)
-        self.assertIn("ROOT / 'QUICKSTART.md'", server)
+        self.assertIn("ROOT / 'docs' / 'QUICKSTART.md'", server)
+
+    def test_the_documents_live_in_docs_and_not_at_the_root(self):
+        """The deliverables moved to docs/ (Andy, 2026-08-12). A builder that
+        kept writing to the root would leave a stale duplicate beside a fresh
+        one, and nothing else would notice."""
+        docs = self.ROOT / 'docs'
+        for name in ('DriX_Fuel_Efficiency_Report.docx',
+                     'DriX8_Fuel_Gauge_Linearity.docx',
+                     'DriX8_Fuel_Methods.docx',
+                     'DriX8_Endurance_EM2040.xlsx',
+                     'QUICKSTART.md', 'MOVING.md'):
+            self.assertTrue((docs / name).is_file(), f'docs/{name} missing')
+            self.assertFalse((self.ROOT / name).exists(),
+                             f'{name} is still at the repo root')
+        # README and CLAUDE.md stay put: GitHub renders one at the root and
+        # Claude Code reads the other there.
+        self.assertTrue((self.ROOT / 'README.md').is_file())
+        self.assertTrue((self.ROOT / 'CLAUDE.md').is_file())
+
+    def test_every_builder_writes_into_docs(self):
+        tools = self.ROOT / 'tools'
+        for builder in ('build_report.py', 'build_gauge_report.py',
+                        'build_methods_doc.py', 'build_endurance_sheet.py'):
+            src = (tools / builder).read_text(encoding='utf-8')
+            self.assertIn("'docs'", src, f'{builder} does not target docs/')
 
     def test_the_panel_drops_the_documents_own_title(self):
         """The dialog header already reads "Quick start"; rendering the file's

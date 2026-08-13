@@ -18,9 +18,9 @@ Or double-click **`start_planner.bat`** — same thing, for people who do not us
 a terminal. `powershell -ExecutionPolicy Bypass -File tools\make_shortcut.ps1`
 puts a shortcut to it on the desktop, pointed at whatever folder the project is
 actually in. Moving the whole thing to another Windows machine is two steps and
-needs nothing but Python: see [`MOVING.md`](MOVING.md).
+needs nothing but Python: see [`docs/MOVING.md`](docs/MOVING.md).
 
-New to it? [`QUICKSTART.md`](QUICKSTART.md) is a one-page tour. The **Quick
+New to it? [`docs/QUICKSTART.md`](docs/QUICKSTART.md) is a one-page tour. The **Quick
 start** button in the app renders that same file, so the two cannot drift.
 
 ```bash
@@ -330,12 +330,22 @@ closes at the nominal 250 L and the lowest premium, that is worth seeing.
 ```
 model.json           coefficients + provenance; the one place to edit assumptions
 engine.py            pure planning engine — no I/O, no web framework
+mission_report.py    renders a PlanResult as Markdown — pure, no I/O either
 server.py            stdlib HTTP server, loopback only, serves the UI and a JSON API
 ui/                  index.html, app.js, styles.css — no CDN, no build step
-tests/test_engine.py the suite, including the per-gondola mutation guards
+tests/               engine, server, UI and mission-report suites
 start_planner.bat    double-click launcher; finds the project from its own
                      location (%~dp0), so the folder can be moved or copied
-MOVING.md            putting this on another Windows machine
+
+docs/                EVERY document lives here
+  QUICKSTART.md        one-page tour; the app's help panel renders this file
+  MOVING.md            putting this on another Windows machine
+  DriX_Fuel_Efficiency_Report.docx/.pdf   the analysis this tool implements
+  DriX8_Fuel_Gauge_Linearity.docx/.pdf    the gauge against the flow meter
+  DriX8_Fuel_Methods.docx/.pdf            which topics feed which numbers
+  DriX8_Endurance_EM2040.xlsx/.csv        the Hourly Ops Log endurance tab
+  missions/            mission reports, one per plan — GITIGNORED, generated
+
 tools/               MCAP extraction + EM2040 refit pipeline, and the adopted
                      fit snapshot (em2040_fit_2026-08-09.json) behind model v2.4
                      also: the bag topic inventory + reference-doc builder, and
@@ -346,12 +356,32 @@ tools/               MCAP extraction + EM2040 refit pipeline, and the adopted
                      SOURCE_DATE build-date override)
                      plus make_shortcut.ps1 / make_icon.py / fuel.ico — the
                      desktop shortcut and the icon it wears, both generated
-
-DriX_Fuel_Efficiency_Report.docx   the analysis this tool implements (and .pdf)
 ```
+
+`README.md` and `CLAUDE.md` stay at the root: GitHub renders one there and
+Claude Code reads the other there.
 
 The bag topic reference is built from here but kept outside the repo, at
 `D:\Claude\ROS2\DriX8_ROS2_Topic_Reference.docx` — see below.
+
+## Mission reports
+
+**Every plan writes a Markdown report to `docs/missions/`**, timestamped to the
+second and never overwritten, and the response carries its path so the UI can
+show you where it went. One file per press of **Plan mission**.
+
+It records the verdict, the summary figures, every leg with its own weather,
+the mission marks, the warnings and leg notes, and the sea-state sensitivity
+band — all taken straight off the `PlanResult`, never recomputed, so a report
+cannot disagree with the plan it describes.
+
+```bash
+python server.py --no-reports          # plan without writing them
+python server.py --report-dir D:\logs  # write them somewhere else
+```
+
+They are **gitignored**: an operator's working output, not source. The four
+documents beside them in `docs/` are the tracked ones.
 
 ## The report
 

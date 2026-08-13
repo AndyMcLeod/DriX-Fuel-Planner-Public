@@ -13,9 +13,9 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.utils import get_column_letter
 
 import sys
-# Default alongside the other repo documents; pass a path to write elsewhere.
+# Default alongside the other documents in docs/; pass a path to write elsewhere.
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (
-    Path(__file__).resolve().parent.parent / 'DriX8_Endurance_EM2040.xlsx')
+    Path(__file__).resolve().parent.parent / 'docs' / 'DriX8_Endurance_EM2040.xlsx')
 
 # Through-origin variants of the measured EM2040 laws, refitted from the same
 # cruise bins (tools/em2040_fit_2026-08-09.json) plus the 0.95 L/h loiter
@@ -135,7 +135,7 @@ prov = [
     f'The {RES_PCT:.0f}% floor is a needle position: on the measured scale a mission may spend about '
     f'{(100 - RES_PCT) * GAUGE_LPP:.0f} L before reaching it, against {_TANK * (1 - RES_PCT / 100):.0f} L on a linear tank.',
     'Gauge non-linearity is UNRESOLVED (per-day spread only 1.5σ), not established; every reading is from the top third',
-    'of the tank and the reserve band itself has never been calibrated. See DriX8_Fuel_Gauge_Linearity.docx.',
+    'of the tank and the reserve band itself has never been calibrated. See docs/DriX8_Fuel_Gauge_Linearity.docx.',
     'Full derivation: DriX_Fuel_Efficiency_Report §5.5 and the AndyMcLeod/DriX-Fuel-Planner repo.',
 ]
 for i, line in enumerate(prov):

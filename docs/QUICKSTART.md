@@ -59,6 +59,15 @@ and time, mission time, loiter, and the current the plan was run under.
 **Warnings and per-leg notes are the product, not noise.** An extrapolation flag
 means that leg sits outside the RPM window its fuel law was fitted over.
 
+## Mission reports
+
+Every press of **Plan mission** writes that plan to a file in `docs/missions/`,
+and the summary card tells you which one. It carries the verdict, the figures,
+every leg with its own weather, the marks, the warnings and the sensitivity
+band — the whole plan, in something you can keep, send on, or compare against
+the next attempt. Start the planner with `--no-reports` if you would rather it
+did not.
+
 ## Three things the planner will keep telling you
 
 1. **The sea-state premium is an assumption.** Every plan carries a sensitivity

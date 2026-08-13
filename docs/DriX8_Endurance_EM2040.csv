@@ -40,5 +40,5 @@ THE GAUGE IS MEASURED AT 2.06 ± 0.11 L/POINT (72-86% band) — 4σ below that �
 falls about 21% FASTER than this column shows. Set B16 = 206 to read PCT/HR on the measured scale.
 "The 25% floor is a needle position: on the measured scale a mission may spend about 154 L before reaching it, against 188 L on a linear tank."
 "Gauge non-linearity is UNRESOLVED (per-day spread only 1.5σ), not established; every reading is from the top third"
-of the tank and the reserve band itself has never been calibrated. See DriX8_Fuel_Gauge_Linearity.docx.
+of the tank and the reserve band itself has never been calibrated. See docs/DriX8_Fuel_Gauge_Linearity.docx.
 Full derivation: DriX_Fuel_Efficiency_Report §5.5 and the AndyMcLeod/DriX-Fuel-Planner repo.

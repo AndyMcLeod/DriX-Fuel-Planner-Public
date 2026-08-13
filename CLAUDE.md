@@ -350,6 +350,45 @@ bearing there would be exactly the trap the field naming exists to avoid. Shown
 at zero as "0.0 kt / slack", same reasoning as the Loiter tile, and left
 unstyled — a current is a condition, not a warning.
 
+## docs/ holds every document; every plan writes a report (2026-08-12)
+
+**All documents moved to `docs/`** — the four deliverables (8 files with their
+PDFs/CSV), plus `QUICKSTART.md` and `MOVING.md`. Moved with `git mv`, so blame
+follows. **`README.md` and `CLAUDE.md` deliberately stayed at the root**:
+GitHub renders one there and Claude Code reads the other there.
+
+Four things had to move with them, and a test now pins each: the four builders'
+default `OUT` paths, the server's `/quickstart.md` route, `test_ui.py`'s doc
+path, and `make_public.py`'s `MOVING.md` retarget. A builder left pointing at
+the root would have written a stale duplicate beside a fresh one with nothing
+noticing.
+
+**Every successful `/api/plan` writes a Markdown mission report** to
+`docs/missions/`, and the response carries `report: {written, path, error}` so
+the UI can name the file. One per press of Plan mission, stamped to the second,
+**never overwritten** — two plans a second apart are two missions and the
+earlier is not scratch.
+
+- **`mission_report.py` is PURE** — `render()` returns a string, `server.py`
+  does the writing. Same rail as `engine.py`, and it is what lets the tests
+  exercise the whole report without touching the operator's `docs/`.
+- **Every figure comes off the `PlanResult`.** Nothing is recomputed: a report
+  doing its own arithmetic could disagree with the plan it claims to describe.
+- **A write failure never costs a plan.** `_write_report` catches `OSError`,
+  returns the message in the payload, and the UI shows it — a silently missing
+  report is worse than none.
+- **`REPORT_DIR` is module-level and `None`-able** precisely so tests can point
+  it at a temp dir; `test_mission_report.py` asserts the real `docs/missions`
+  is untouched by the suite. That rail exists because this project has already
+  had a harness write the operator's real files.
+- **A title from the request body reaches the filename**, so it is slugged —
+  `../../etc/passwd` cannot escape the directory, and a test tries.
+- **`docs/missions/` is gitignored.** Generated operator output; the four
+  documents beside it are the tracked ones.
+
+`--no-reports` and `--report-dir PATH` are on `server.py`, and
+`start_planner.bat` forwards them.
+
 ## The 2026-08-12 adversarial review — 28 confirmed findings, all fixed
 
 A five-reviewer fan-out (engine / server / UI / tests / docs) with adversarial

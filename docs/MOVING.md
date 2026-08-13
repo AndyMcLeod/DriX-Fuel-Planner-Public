@@ -71,34 +71,36 @@ bag data**, which is over a thousand times the size of the project:
 
 | | size | copy it? |
 |---|---|---|
-| Project files (code, UI, model, all four documents) | **5.5 MB** | **yes** — 52 files |
+| Project files (code, UI, model, and `docs\` with all four documents) | **5.5 MB** | **yes** |
 | `.git\` | 15 MB | yes, if you want history |
 | `D8_2040\` — raw MCAP bags | **6.5 GB** | **no** |
 | `tools\rosbags\` — extraction caches | 18 MB | only for the pipeline (§5) |
 | `tools\node_modules\` | 9 MB | no — `npm install` regenerates it |
+| `docs\missions\` — generated mission reports | grows | no, they are yours to keep or drop |
 | `__pycache__\` | small | no, regenerated |
 
 The whole planner is **5.5 MB**, and 3.6 MB of that is the four Word/PDF
-documents. It fits on anything.
+documents in `docs\`. It fits on anything.
 
 Robocopy with the same exclusions the repo already declares in `.gitignore`:
 
 ```powershell
-robocopy D:\Claude\Fuel E:\transfer\Fuel /E /XD D8_2040 __pycache__ node_modules /XF *.mcap
+robocopy D:\Claude\Fuel E:\transfer\Fuel /E /XD D8_2040 __pycache__ node_modules missions /XF *.mcap
 ```
 
 That keeps `.git\` and the `tools\rosbags\` caches. For a planner-only copy —
 the smallest thing that works — add them to the exclusions:
 
 ```powershell
-robocopy D:\Claude\Fuel E:\transfer\Fuel /E /XD D8_2040 __pycache__ node_modules .git rosbags /XF *.mcap
+robocopy D:\Claude\Fuel E:\transfer\Fuel /E /XD D8_2040 __pycache__ node_modules .git rosbags missions /XF *.mcap
 ```
 
 **That second command is the one that was tested.** The exact procedure in this
 document — copy with those exclusions, run `make_shortcut.ps1` in the copy,
 launch from the shortcut — was run end to end on 2026-08-11: 58 files, 5.6 MB,
-the moved copy served the UI and its API, and all 122 tests passed from the new
-location.
+the moved copy served the UI and its API, and the whole suite passed from the
+new location. (`missions` was added to the exclusions when mission reports
+arrived; they are your working output, not part of the tool.)
 
 The planner does **not** read the bags at run time — every coefficient it needs
 is baked into `model.json`. Leaving 6.5 GB behind costs the new machine nothing
@@ -259,3 +261,17 @@ start_planner.bat
 `tools\fuel.ico` is drawn by `tools\make_icon.py` rather than downloaded, so it
 carries no licence question and can be regenerated. Everything is plain text you
 can read and change.
+
+## Mission reports
+
+Every press of **Plan mission** writes a Markdown report into `docs\missions\`,
+timestamped and never overwritten, and the app tells you the path. They are
+yours: nothing reads them back, and deleting them costs nothing.
+
+```powershell
+python server.py --no-reports            # do not write them
+python server.py --report-dir D:\logs    # write them somewhere else
+```
+
+Pass either through the shortcut too — `start_planner.bat` forwards its
+arguments.
