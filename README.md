@@ -275,6 +275,15 @@ reading, the note under the button goes **bold red and blinks** — a state that
 clears itself whatever the read returns. A red note that has stopped blinking is
 a failed read, not a running one.
 
+**When the mission runs outside the forecast**, real data is tried first: a
+cached cycle, then one NOAA still serves — its archive runs about two days back,
+so a mission that started yesterday is answered exactly. Only a time nothing
+covers is **estimated**, by borrowing the value a whole tidal cycle away, which
+is within about 0.2 kt of the model against 0.6–2.2 kt for simply holding the
+last value. Every estimated leg is flagged in the response, named in the note
+and marked in the report — and past three tidal cycles it stops estimating and
+says so. A position with no model water is still left empty whatever the time.
+
 `currents.py` is the module behind it — standard library, no new dependency —
 and it is a usable tool on its own:
 

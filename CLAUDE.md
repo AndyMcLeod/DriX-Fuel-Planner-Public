@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 369 tests — must stay green
+python -m unittest discover -s tests      # 383 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **369 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **383 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -610,7 +610,10 @@ is the part that would silently drift.
 - **Missing is never zero.** A leg the forecast cannot see is left EMPTY — in
   the response, in the UI box, everywhere. No data and slack water are different
   answers and only one of them belongs in a plan. Three tests and a mutation
-  pin this.
+  pin this. **Since 2026-08-13 this is a rule about SPACE rather than time**: a
+  position with no model water is still empty, always, because no amount of time
+  shifting invents an ocean there. A TIME outside the span is now answered
+  best-effort — see "Out of range" below — and an estimate is never zero either.
 - **A survey does not walk down its first line.** A lawnmower ends roughly where
   it began, so a survey leg holds position and only advances the clock. Walking
   it `lines × line_length` down `course_deg` would put the run home tens of
@@ -661,6 +664,58 @@ for 550 ms) without needing a visible tab. The still frame was taken by pointing
 headless Chrome at a scratch page that loads THIS server's `styles.css`, with
 each sample carrying `id="currentsOut"` — the rules are id-scoped, so a preview
 using any other id renders unstyled and proves nothing.
+
+### Out of range: real data, then a projection, then a refusal (2026-08-13)
+
+Andy: *"If current flow data the user requested are out of range, project
+forward/backward from existing data for best-effort-estimation"* — then *"or
+find historical data on the site you're looking at."* Both, in that order of
+preference, because **real data beats an estimate**:
+
+1. **A cached cycle covers it** — as before.
+2. **NOAA still serves one that covers it** → fetch it. `ensure_cycle_covering`
+   checks the catalog first, which costs one page rather than 33 MB, and only
+   downloads when a real cycle actually covers the window. Andy chose auto-fetch
+   over asking, so the button can take ~30 s on a miss.
+3. **Nothing covers it** → project, flagged.
+4. **Past the projection's reach** → still refuse. A guess has a range.
+
+**MEASURED, THEN BUILT — the numbers are why this is shipped by whole tidal
+cycles and not by holding the last value.** Against this model's own 54 h output,
+substituting the value *n* whole M2 periods (12.4206 h) away:
+
+| method | RMS error |
+|---|---|
+| project 1 cycle | **0.19 kt** |
+| project 2 cycles | **0.14 kt** |
+| project 3 cycles | **0.21 kt** |
+| hold the last value | 0.57 – 2.21 kt |
+| assume slack | 0.36 – 1.46 kt |
+
+Flat out to 37 h, because a tide repeats rather than decays. At the Bay entrance
+where it runs to 2.2 kt, projection lands within 0.27 kt while persistence is
+wrong by the whole tide. **`MAX_PROJECT_CYCLES` is 3** for that reason and not a
+round number — beyond ~37 h there is no evidence in hand, and the non-tidal part
+(wind setup, river flow) does not repeat at all.
+
+**⚠ NOAA keeps only about TWO DAYS of cycles.** Measured 2026-08-13: three
+cycles that day, four the day before, one the day before that, nothing earlier.
+So step 2 answers a mission that started within ~2 days and nothing further
+back. Do not build anything that assumes a deeper archive.
+
+**Nothing is estimated silently.** `at_best` returns `(values, shift_hours)` and
+a shift of 0.0 means real; a leg carries `estimated`, `projected_hours` and a
+note beginning `ESTIMATE`; the provenance label gains `PART ESTIMATED` so the
+mission report cannot file borrowed numbers under the cycle's name; the response
+carries `estimated_legs` and a warning; the UI names them. **`at()` itself is
+unchanged and still raises** — it is the truthful primitive every existing rail
+is built on, and projection is an explicit opt-in beside it rather than a
+loosening of it.
+
+**A bug this caught on the way in, worth knowing:** `cycle_span` counted nowcast
+frames with `'.n' in name`, and every one of those files ends `.nc` — so all 54
+counted as nowcast and the computed span landed two days early. A test found it;
+a substring test on a filename extension is the shape to distrust.
 
 ### What it does NOT fix
 

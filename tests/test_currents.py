@@ -314,6 +314,170 @@ class TestResolveLegs(CacheCase):
         self.assertTrue(any('error' in r for r in rows))
 
 
+class TestProjectionOutsideTheSpan(CacheCase):
+    """Out of range in TIME is answerable; out of range in SPACE is not.
+
+    The tide is semidiurnal, so a time the forecast cannot reach is estimated
+    from the value one whole M2 period away — measured against the real model
+    at 0.14-0.21 kt RMS, against 0.57-2.21 kt for holding the last value. A
+    POSITION with no model water is still None: no amount of time shifting
+    invents an ocean there."""
+
+    def setUp(self):
+        super().setUp()
+        # 24 hourly frames, u = the frame index, so the value identifies which
+        # frame answered and a borrowed one can be told from a real one.
+        self.tag = build_cache(
+            self.cache, [uniform(float(k), 0.0) for k in range(24)])
+        self.cur = ofs.Currents(self.tag, self.cache)
+        self.mid = self.cur.start + dt.timedelta(hours=10)
+
+    def test_inside_the_span_is_untouched_and_unshifted(self):
+        self.assertEqual(self.cur.at_best(38.2, -74.8, self.mid),
+                         (self.cur.at(38.2, -74.8, self.mid), 0.0))
+
+    def test_past_the_end_borrows_exactly_one_tidal_cycle(self):
+        when = self.cur.end + dt.timedelta(hours=1)
+        got, shift = self.cur.at_best(38.2, -74.8, when)
+        self.assertAlmostEqual(shift, -ofs.M2_PERIOD_H, places=6)
+        # u identifies the frame: 24 h after the start, less one M2 period.
+        self.assertAlmostEqual(got[2], 24.0 - ofs.M2_PERIOD_H, places=3)
+
+    def test_before_the_start_borrows_forward(self):
+        when = self.cur.start - dt.timedelta(hours=2)
+        got, shift = self.cur.at_best(38.2, -74.8, when)
+        self.assertAlmostEqual(shift, ofs.M2_PERIOD_H, places=6)
+        self.assertAlmostEqual(got[2], ofs.M2_PERIOD_H - 2.0, places=3)
+
+    def test_a_bigger_gap_borrows_more_whole_cycles(self):
+        when = self.cur.end + dt.timedelta(hours=14)
+        got, shift = self.cur.at_best(38.2, -74.8, when)
+        self.assertAlmostEqual(shift, -2 * ofs.M2_PERIOD_H, places=6)
+
+    def test_beyond_the_cycle_limit_it_refuses_rather_than_guessing_wider(self):
+        """A guess has a range past which it stops being one. The non-tidal
+        part — wind setup, river flow — does not repeat."""
+        when = self.cur.end + dt.timedelta(
+            hours=ofs.MAX_PROJECT_CYCLES * ofs.M2_PERIOD_H + 1)
+        with self.assertRaises(ValueError) as caught:
+            self.cur.at_best(38.2, -74.8, when)
+        self.assertIn('cycle', str(caught.exception))
+
+    def test_a_cache_shorter_than_one_tidal_cycle_cannot_project_at_all(self):
+        """Reachable in production, not a theoretical guard: a cycle still being
+        written appears with only its first few hours, and shifting a whole M2
+        period inside a span narrower than one lands nowhere. It must refuse
+        rather than answer from the wrong end of the file."""
+        short = ofs.Currents(
+            build_cache(self.cache, [uniform(float(k), 0.0) for k in range(6)],
+                        tag='dbofs_20260813_t12z'), self.cache)
+        self.assertLess((short.end - short.start).total_seconds() / 3600.0,
+                        ofs.M2_PERIOD_H)
+        with self.assertRaises(ValueError) as caught:
+            short.at_best(38.2, -74.8, short.end + dt.timedelta(hours=1))
+        self.assertIn('shorter than one tidal cycle', str(caught.exception))
+
+    def test_a_position_with_no_water_is_still_none_when_projecting(self):
+        dry = ofs.Currents(build_cache(self.cache, [uniform(1.0, 0.0)] * 24,
+                                       mask=[0] * 25, tag='dbofs_20260813_t06z'),
+                           self.cache)
+        self.assertIsNone(dry.at_best(38.2, -74.8, dry.end
+                                      + dt.timedelta(hours=1))[0])
+
+    def test_at_itself_still_refuses_so_the_strict_primitive_survives(self):
+        """`at` is the truthful primitive and every rail built on it still
+        holds; projection is an explicit opt-in beside it, not a loosening."""
+        with self.assertRaises(ValueError):
+            self.cur.at(38.2, -74.8, self.cur.end + dt.timedelta(hours=1))
+
+    # -- what the caller is told -------------------------------------------- #
+    def _legs_running_past_the_end(self):
+        return [{'name': 'Transit out', 'kind': 'transit', 'distance_nm': 10,
+                 'speed_kt': 5, 'course_deg': 90},
+                {'name': 'Survey', 'kind': 'survey', 'distance_nm': 60,
+                 'speed_kt': 3, 'course_deg': 0}]
+
+    def test_a_projected_leg_is_flagged_and_says_so_in_words(self):
+        rows, prov = ofs.resolve_legs(
+            38.2, -74.8, self.cur.start + dt.timedelta(hours=20),
+            self._legs_running_past_the_end(), tag=self.tag, cache=self.cache)
+        est = [r for r in rows if r.get('estimated')]
+        self.assertTrue(est, 'a leg past the end should be estimated, not empty')
+        for r in est:
+            self.assertIn('ESTIMATE', r['note'])
+            self.assertGreater(r['projected_hours'], 0)
+            self.assertIn('current_speed_kt', r)      # it DID answer
+        self.assertIn('PART ESTIMATED', prov['label'])
+        self.assertEqual(prov['estimated_legs'], [r['name'] for r in est])
+
+    def test_projection_off_leaves_the_old_refusal_intact(self):
+        rows, prov = ofs.resolve_legs(
+            38.2, -74.8, self.cur.start + dt.timedelta(hours=20),
+            self._legs_running_past_the_end(), tag=self.tag, cache=self.cache,
+            project=False)
+        self.assertTrue(any('error' in r for r in rows))
+        self.assertNotIn('PART ESTIMATED', prov['label'])
+
+    def test_a_mission_inside_the_span_is_flagged_at_all(self):
+        """The acceptance case for every refusal above: nothing is marked an
+        estimate when the forecast actually covered it."""
+        rows, prov = ofs.resolve_legs(
+            38.2, -74.8, self.cur.start + dt.timedelta(hours=1),
+            [{'name': 'Transit out', 'kind': 'transit', 'distance_nm': 5,
+              'speed_kt': 5, 'course_deg': 90}], tag=self.tag, cache=self.cache)
+        self.assertFalse(any(r.get('estimated') for r in rows))
+        self.assertNotIn('PART ESTIMATED', prov['label'])
+        self.assertNotIn('estimated_legs', prov)
+
+
+class TestRemoteCycleLookup(unittest.TestCase):
+    """Which cycle NOAA would have, worked out from the catalog alone.
+
+    No network here: `cycle_span` is arithmetic on the file names, and the
+    lookup is driven through a stubbed `available_cycles`. The point of doing it
+    from the catalog is that it costs one page rather than 33 MB to find out
+    whether real data exists — and real data beats an estimate."""
+
+    def test_a_cycles_span_is_read_off_its_hour_files(self):
+        hours = ([f'dbofs.t00z.20260813.regulargrid.n{k:03d}.nc' for k in range(1, 7)]
+                 + [f'dbofs.t00z.20260813.regulargrid.f{k:03d}.nc' for k in range(1, 49)])
+        start, end = ofs.cycle_span('20260813', '00z', hours)
+        # 6 nowcast frames run UP TO the cycle hour, 48 forecast after it.
+        self.assertEqual(start, dt.datetime(2026, 8, 12, 19, tzinfo=UTC))
+        self.assertEqual(end, dt.datetime(2026, 8, 15, 0, tzinfo=UTC))
+
+    def test_a_partial_cycle_reports_the_shorter_span_it_actually_has(self):
+        hours = [f'dbofs.t12z.20260813.regulargrid.n{k:03d}.nc' for k in range(1, 7)]
+        start, end = ofs.cycle_span('20260813', '12z', hours)
+        self.assertEqual(end, dt.datetime(2026, 8, 13, 12, tzinfo=UTC))
+
+    def test_the_newest_covering_cycle_wins(self):
+        catalog = [
+            ('20260813', '00z', [f'x.n{k:03d}.nc' for k in range(1, 7)]
+                                + [f'x.f{k:03d}.nc' for k in range(1, 49)]),
+            ('20260812', '18z', [f'x.n{k:03d}.nc' for k in range(1, 7)]
+                                + [f'x.f{k:03d}.nc' for k in range(1, 49)]),
+        ]
+        real = ofs.available_cycles
+        ofs.available_cycles = lambda *a, **k: catalog
+        try:
+            got = ofs.remote_cycle_covering(
+                dt.datetime(2026, 8, 13, 6, tzinfo=UTC),
+                dt.datetime(2026, 8, 13, 18, tzinfo=UTC))
+            self.assertEqual(got[:2], ('20260813', '00z'))
+            # A window only the OLDER cycle reaches falls back to it.
+            got = ofs.remote_cycle_covering(
+                dt.datetime(2026, 8, 12, 14, tzinfo=UTC),
+                dt.datetime(2026, 8, 12, 20, tzinfo=UTC))
+            self.assertEqual(got[:2], ('20260812', '18z'))
+            # ... and a window nothing reaches says so rather than guessing.
+            self.assertIsNone(ofs.remote_cycle_covering(
+                dt.datetime(2026, 8, 1, 0, tzinfo=UTC),
+                dt.datetime(2026, 8, 1, 6, tzinfo=UTC)))
+        finally:
+            ofs.available_cycles = real
+
+
 class TestCycleSelection(CacheCase):
 
     def test_a_cycle_that_does_not_span_the_mission_is_not_used(self):

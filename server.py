@@ -502,18 +502,33 @@ class Handler(BaseHTTPRequestHandler):
         end = departure + dt.timedelta(hours=hours)
 
         bbox = ofs.mission_bbox(lat, lon, legs)
-        tag = ofs.covering_cycle(departure, end, bbox)
-        fetched = False
+        offline = bool(body.get('offline'))
+        # REAL DATA FIRST. A cached cycle covering the window, else one NOAA
+        # still serves — its archive runs about two days back, so a mission that
+        # started yesterday is answerable exactly rather than estimated. Only
+        # when nothing covers it does anything get projected.
+        try:
+            tag, fetched = ofs.ensure_cycle_covering(
+                departure, end, bbox, allow_fetch=not offline)
+        except RuntimeError as exc:
+            # Offline, or NOAA down, or the mission is outside the model.
+            # Each is the operator's to act on, so say which.
+            return self._error(503, f'could not get the forecast: {exc}')
+
         if tag is None:
-            if body.get('offline'):
+            # Nothing covers the whole window — past the 48 h horizon, or older
+            # than the archive. Fall back to a cycle that at least holds the
+            # departure, and let resolve_legs project the rest; it flags every
+            # value it borrows.
+            tag = ofs.covering_cycle(departure, departure, bbox)
+        if tag is None:
+            if offline:
                 return self._error(503, 'no cached forecast covers this mission and '
                                         'fetching is off — enter currents by hand')
             try:
                 tag = ofs.fetch_cycle(bbox=bbox, quiet=True)
                 fetched = True
             except RuntimeError as exc:
-                # Offline, or NOAA down, or the mission is outside the model.
-                # Each is the operator's to act on, so say which.
                 return self._error(503, f'could not get the forecast: {exc}')
 
         try:
@@ -523,11 +538,24 @@ class Handler(BaseHTTPRequestHandler):
 
         out = {'legs': rows, 'source': prov, 'fetched': fetched,
                'mission_hours': round(hours, 2)}
+        est = [r['name'] for r in rows if r.get('estimated')]
+        if est:
+            out['estimated_legs'] = est
         span_end = ofs.parse_time(prov['span'][1])
         if end > span_end:
             over = (end - span_end).total_seconds() / 3600.0
-            out['warning'] = (f'the mission runs {over:.1f} h past the end of this '
-                              f'forecast — the last legs have no data')
+            if est:
+                out['warning'] = (
+                    f'the mission runs {over:.1f} h past the end of this forecast — '
+                    f'{len(est)} leg(s) are ESTIMATED, projected across whole tidal '
+                    f'cycles from data inside it. Typically within about 0.2 kt, but '
+                    f'check them before planning on them')
+            else:
+                out['warning'] = (f'the mission runs {over:.1f} h past the end of this '
+                                  f'forecast — the last legs have no data')
+        elif est:
+            out['warning'] = (f'{len(est)} leg(s) are ESTIMATED — projected across '
+                              f'whole tidal cycles from outside the forecast span')
         if all('current_speed_kt' not in r for r in rows):
             out['warning'] = ('no leg fell on model water — check the departure '
                               'position is inside the forecast domain')

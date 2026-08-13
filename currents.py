@@ -68,6 +68,24 @@ SURFACE = 0            # Depth[0] == 0.0 m, checked by verify()
 CYCLES = ('18z', '12z', '06z', '00z')               # newest first
 TIMEOUT = 180
 
+# Principal lunar semidiurnal period. The current in this estuary is
+# semidiurnal, so this is the interval a projection borrows across when the
+# forecast cannot reach a requested time.
+M2_PERIOD_H = 12.4206
+
+# How far a projection may reach, in whole cycles. MEASURED, not chosen: against
+# this model's own 54 h output the RMS error of a projection is 0.19 kt at one
+# cycle, 0.14 at two and 0.21 at three — flat, because the tide repeats rather
+# than decays. It is capped here because the non-tidal part (wind setup, river
+# flow) does NOT repeat, and beyond a day and a half of extrapolation there is
+# no evidence in hand that it stays this good. Three cycles is 37.3 h.
+MAX_PROJECT_CYCLES = 3
+
+# A cycle's frames: `n` files run up to the cycle hour, `f` files after it. Used
+# to work out what a REMOTE cycle would cover without downloading it.
+NOWCAST_H = 6
+FORECAST_H = 48
+
 
 # --------------------------------------------------------------------------- #
 #  DAP2 — the minimum needed to pull a hyperslab out of a THREDDS server.
@@ -403,6 +421,56 @@ class Currents:
         return uv_to_set(u, v)
 
 
+    # -- best effort, when the span does not reach ------------------------- #
+    def at_best(self, lat, lon, when):
+        """(values, shift_hours) — a value for `when` even outside the span.
+
+        `shift_hours` is 0.0 when the answer came from a real frame. Otherwise
+        it is how far in time the value was borrowed from, signed: negative
+        means projected FORWARD from earlier data, positive means projected
+        BACKWARD from later data.
+
+        **The projection is by whole tidal cycles, not by holding or by a
+        line.** The current here is semidiurnal, so the value one M2 period away
+        is the best estimate available from data we already hold — measured
+        against this model's own output, projecting one to three cycles lands
+        within **0.14–0.21 kt RMS**, where holding the last value is wrong by
+        0.57–2.21 kt and assuming slack water by 0.36–1.46 kt. Extrapolating a
+        reversing tide linearly is worse than all three and is not offered.
+
+        Position is NOT projected. `None` still means no model water at that
+        point, and no amount of time shifting invents an ocean there.
+
+        Raises ValueError past MAX_PROJECT_CYCLES, because a guess has a range
+        beyond which it stops being one — see the constant.
+        """
+        t = (when - EPOCH).total_seconds()
+        lo, hi = self.times[0], self.times[-1]
+        step = M2_PERIOD_H * 3600.0
+        src = t
+        if t > hi + 1e-6:
+            k = math.ceil((t - hi) / step)
+            src = t - k * step
+        elif t < lo - 1e-6:
+            k = math.ceil((lo - t) / step)
+            src = t + k * step
+        else:
+            k = 0
+        if k > MAX_PROJECT_CYCLES:
+            raise ValueError(
+                f'{when:%Y-%m-%dT%H:%M:%SZ} is {k} tidal cycles outside the '
+                f'cached span {self.start:%Y-%m-%dT%H:%MZ}..'
+                f'{self.end:%Y-%m-%dT%H:%MZ} — past the '
+                f'{MAX_PROJECT_CYCLES}-cycle limit a projection is offered over')
+        # A span shorter than one cycle could leave the shifted time still
+        # outside. Not reachable with a 54 h cycle, but it must not answer
+        # wrongly if one ever were.
+        if src < lo - 1e-6 or src > hi + 1e-6:
+            raise ValueError(
+                f'cached span is shorter than one tidal cycle — cannot project')
+        return self.at(lat, lon, EPOCH + timedelta(seconds=src)), (src - t) / 3600.0
+
+
 def uv_to_set(u, v):
     """East/north m/s -> (knots, degrees TRUE the water SETS TOWARD, u, v)."""
     speed = math.hypot(u, v) * MS_TO_KT
@@ -629,7 +697,7 @@ def dead_reckon(lat, lon, course_deg, distance_nm):
 
 
 def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
-                 samples=13):
+                 samples=13, project=True):
     """Per-leg current for a mission leaving `origin` at `departure` (UTC).
 
     `legs` are dicts carrying what the planner's Leg carries: name, kind,
@@ -666,13 +734,22 @@ def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
                             else dead_reckon(lat, lon, course, distance))
 
         us, vs, missed, outside = [], [], 0, None
+        shifts = []
         for i in range(samples):
             f = i / (samples - 1) if samples > 1 else 0.0
             slat = start_lat + (end_lat - start_lat) * f
             slon = start_lon + (end_lon - start_lon) * f
             try:
-                got = cur.at(slat, slon, when + timedelta(hours=hours * f))
+                if project:
+                    got, shift = cur.at_best(slat, slon,
+                                             when + timedelta(hours=hours * f))
+                else:
+                    got, shift = cur.at(slat, slon,
+                                        when + timedelta(hours=hours * f)), 0.0
             except ValueError as exc:
+                # Still refused: either projection is off, or the time is past
+                # even the projection's reach. A leg nobody can answer for stays
+                # unanswered rather than being filled with a worse guess.
                 outside = str(exc)
                 break
             if got is None:
@@ -680,6 +757,8 @@ def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
                 continue
             us.append(got[2])
             vs.append(got[3])
+            if shift:
+                shifts.append(shift)
 
         row = {
             'name': leg.get('name', kind),
@@ -704,9 +783,29 @@ def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
             # numbers are accepted into a plan.
             row['along_kt'] = round((u * math.sin(math.radians(course))
                                      + v * math.cos(math.radians(course))) * MS_TO_KT, 2)
+            notes = []
             if missed:
-                row['note'] = (f'{missed} of {samples} sample points fell on land or '
-                               f'outside the model — averaged over the rest')
+                notes.append(f'{missed} of {samples} sample points fell on land or '
+                             f'outside the model — averaged over the rest')
+            if shifts:
+                # NEVER silently. An estimate that reads like a forecast is
+                # worse than no answer, because it is acted on with the same
+                # confidence. The flag is machine-readable and the note says it
+                # in words; both surfaces and the report carry it.
+                back = sum(1 for s in shifts if s > 0)
+                far = max(abs(s) for s in shifts)
+                row['estimated'] = True
+                row['projected_hours'] = round(far, 2)
+                row['projected_samples'] = len(shifts)
+                way = 'backward from later' if back > len(shifts) / 2 else \
+                      'forward from earlier'
+                notes.append(
+                    f'ESTIMATE — {len(shifts)} of {len(us)} samples lie outside the '
+                    f'forecast, projected {way} data across whole tidal cycles '
+                    f'(up to {far:.1f} h). Typically within about 0.2 kt, but it '
+                    f'is not a forecast')
+            if notes:
+                row['note'] = '. '.join(notes)
         else:
             # No value at all. Deliberately NOT zero: a leg the forecast cannot
             # see and a leg with no current are different answers, and only one
@@ -730,6 +829,16 @@ def resolve_legs(origin_lat, origin_lon, departure, legs, tag=None, cache=None,
     }
     prov['label'] = (f'{prov["model"]} {prov["cycle"]} surface forecast '
                      f'({prov["span"][0][:16]}Z to {prov["span"][1][:16]}Z)')
+    # A plan that borrowed values must not be filed under the cycle's name
+    # alone. The label is what the mission report prints, so the qualification
+    # travels with it rather than living only on screen.
+    est = [r['name'] for r in out if r.get('estimated')]
+    if est:
+        prov['estimated_legs'] = est
+        prov['projected_hours'] = max(r['projected_hours'] for r in out
+                                      if r.get('estimated'))
+        prov['label'] += (f' — PART ESTIMATED: {", ".join(est)} projected across '
+                          f'tidal cycles from outside the forecast')
     return out, prov
 
 
@@ -835,6 +944,74 @@ def covering_cycle(start, end, bbox=None, cache=None):
                 continue
         return tag
     return None
+
+
+def cycle_span(datestr, cycle, hours=None):
+    """(start, end) UTC a cycle covers, WITHOUT downloading it.
+
+    `n` files run up to the cycle hour and `f` files after it, so the span is
+    read off the file names when `available_cycles` supplied them and falls back
+    to the published 6/48 shape when it did not. This is what lets the caller
+    ask "does NOAA still hold something covering this?" for the price of one
+    catalog page rather than 33 MB.
+    """
+    base = (datetime.strptime(datestr, '%Y%m%d').replace(tzinfo=timezone.utc)
+            + timedelta(hours=int(cycle[:2])))
+    if hours:
+        # Match the FRAME token, not a bare '.n' — every one of these names ends
+        # in '.nc', so a substring test counts each forecast file as a nowcast
+        # one and pushes the span two days early. Found by a test, which is the
+        # only reason it is not still there.
+        kinds = [m.group(1) for m in
+                 (re.search(r'\.([nf])\d{3}\.nc$', h) for h in hours) if m]
+        n = kinds.count('n')
+        f = kinds.count('f')
+    else:
+        n, f = NOWCAST_H, FORECAST_H
+    return base - timedelta(hours=max(n - 1, 0)), base + timedelta(hours=f)
+
+
+def remote_cycle_covering(start, end, ofs='dbofs', days_back=3):
+    """(datestr, cycle, span) of the newest cycle NOAA still serves covering the
+    window, or None.
+
+    NOAA keeps only about two days of these: measured 2026-08-13, the catalog
+    held three cycles for that day, four for the day before, one for the day
+    before that and nothing earlier. So this answers for a mission that started
+    within roughly two days and nothing further back — which is exactly the
+    range over which real data can replace an estimate.
+    """
+    for datestr, cyc, hours in available_cycles(ofs, days_back):
+        span = cycle_span(datestr, cyc, hours)
+        if span[0] <= start and end <= span[1]:
+            return datestr, cyc, span
+    return None
+
+
+def ensure_cycle_covering(start, end, bbox=None, ofs='dbofs', cache=None,
+                          allow_fetch=True, quiet=True):
+    """(tag, fetched) for a cycle covering the window, downloading one if the
+    cache has none and NOAA still serves one. (None, False) when nothing covers
+    it and the caller must fall back to projecting.
+
+    REAL DATA BEATS AN ESTIMATE, which is the whole point of the lookup: a
+    mission that started yesterday is answerable exactly, and only a time no
+    cycle reaches — past the forecast horizon, or older than the archive — is
+    worth guessing at.
+    """
+    cache = cache or CACHE
+    have = covering_cycle(start, end, bbox, cache)
+    if have:
+        return have, False
+    if not allow_fetch:
+        return None, False
+    found = remote_cycle_covering(start, end, ofs)
+    if not found:
+        return None, False
+    datestr, cyc, _ = found
+    fetch_cycle(ofs=ofs, datestr=datestr, cycle=cyc, bbox=bbox,
+                cache=cache, quiet=quiet)
+    return _tag(ofs, datestr, cyc), True
 
 
 COOPS_API = 'https://api.tidesandcurrents.noaa.gov'

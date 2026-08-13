@@ -883,8 +883,14 @@ async function doCurrents() {
     let note = `${data.source.label} — ${filled} of ${data.legs.length} legs filled`;
     if (along) note += `. Along track: ${along}`;
     if (missed.length) note += `. No data: ${missed.join(', ')}`;
-    setCurrentsNote(note, (data.warning || missed.length) ? 'warn' : '');
-    if (data.warning) setCurrentsNote(`${note}. ${data.warning}`, 'warn');
+    // An ESTIMATE is named here as well as in the label and the warning. A
+    // borrowed value that reads like a forecast is worse than no value at all,
+    // because it gets acted on with the same confidence.
+    const est = data.estimated_legs || [];
+    if (est.length) note += `. ESTIMATED: ${est.join(', ')}`;
+    const kind = (data.warning || missed.length || est.length) ? 'warn' : '';
+    setCurrentsNote(note, kind);
+    if (data.warning) setCurrentsNote(`${note}. ${data.warning}`, kind);
     refreshDerived();
   } catch (err) {
     // Offline is the ordinary case at sea, not an exception worth hiding.
