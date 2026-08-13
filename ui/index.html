@@ -412,6 +412,12 @@
   </div>
 </main>
 
+<!-- The one hover-tip layer. Anchored to the CONTROL, never to the pointer, so
+     the cursor cannot sit on the text it just asked for. `aria-hidden` because
+     the tip only ever repeats a title the control already carries — announcing
+     it twice is worse than not announcing it here at all. -->
+<div id="uiTip" role="presentation" aria-hidden="true"></div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

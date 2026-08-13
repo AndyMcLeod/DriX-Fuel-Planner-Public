@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 351 tests — must stay green
+python -m unittest discover -s tests      # 361 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **351 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **361 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -632,6 +632,51 @@ partly counted twice** — the leg note continues to say so. Reading the tide of
 DBOFS makes the input better; it does not make the correction clean, and it is
 not a substitute for the reciprocal-heading pairs that would strip the tide out
 of the fit itself (see "Known gaps").
+
+## Every control explains itself: the hover tips (2026-08-13)
+
+Andy: "Add floating tooltips to all components." All **73** controls now carry
+an explanation, shown in ONE floating layer (`#uiTip`) anchored to the CONTROL
+— below its left edge, flipped above at the viewport bottom, clamped either
+way — never to the pointer.
+
+**Ported from the ASV console's `1035ef7`, deliberately**, and for the reason
+that mechanism exists there: a native `title` tooltip is drawn by the BROWSER,
+which on this platform parks it under the cursor, and its position is not the
+page's to move. On hover the title is stashed off the element — which is what
+suppresses the native tip — and restored on the way out.
+
+Two deliberate divergences from the sibling, both worth keeping:
+
+- **The copy lives in `TIPS` in `app.js`, not as `title=` in the markup.** The
+  sibling already had 118 hand-written titles and only needed re-positioning;
+  this page had **none**, so the copy was new, and one reviewable block beats it
+  scattered through 460 lines of form markup. `applyTips()` writes it onto the
+  elements at boot, after which the DOM matches the sibling's exactly and the
+  layer is the same code. Keys are CSS selectors, so grouped rows
+  (`'#outSea, #surSea, #homeSea'`) say a thing once and the three loiter buttons
+  per leg are reached by `[data-loiter-add]` without inventing ids.
+- **Focus shows a tip, not just hover.** This is a form — 39 inputs, 11 selects
+  — and a keyboard operator would otherwise be the only one who never sees an
+  explanation. `focusin`/`focusout`, which bubble where `focus` does not.
+
+**`applyTips` never overwrites a title already present**, and `hideTip` restores
+the stash only if the attribute is still absent — a readout rewritten mid-hover
+has to win. That second rule is inherited from the sibling, which learned it
+with five runtime-written readouts.
+
+**The check that enforces the ask is `test_every_control_with_an_id_has_a_tip`.**
+It reads every `input|select|button|textarea|output` out of `index.html` and
+fails on any that `TIPS` does not cover — so a control added later cannot ship
+unexplained, and "all components" cannot decay into "the ones that had a tip the
+day it was written". Its mirror, `test_no_tip_points_at_a_control_that_does_not_exist`,
+catches the other direction: a renamed id leaves a tip silently unapplied.
+Both were mutation-checked, 12/12 caught. The coverage test earned its keep
+immediately — it caught `helpClose` and `planTarget` missing on the first run.
+
+`pointer-events: none` on the layer is load-bearing, not decoration: without it
+the tip can land under the cursor, take the `mouseover`, and flicker itself
+away.
 
 ## Current: set and drift (2026-08-11)
 

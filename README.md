@@ -21,7 +21,10 @@ actually in. Moving the whole thing to another Windows machine is two steps and
 needs nothing but Python: see [`docs/MOVING.md`](docs/MOVING.md).
 
 New to it? [`docs/QUICKSTART.md`](docs/QUICKSTART.md) is a one-page tour. The **Quick
-start** button in the app renders that same file, so the two cannot drift.
+start** button in the app renders that same file, so the two cannot drift. Every
+control in the app also explains itself on hover — or on keyboard focus — in a
+tip anchored to the control rather than to the pointer, so the cursor never sits
+on the text it just asked for.
 
 ```bash
 python -m unittest discover -s tests -v

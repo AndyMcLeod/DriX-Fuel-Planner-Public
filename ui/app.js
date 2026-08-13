@@ -110,7 +110,304 @@ async function boot() {
   refreshOrigin();
   refreshPattern();
   drawRose();
+  applyTips();
 }
+
+// --------------------------------------------------------------- hover tips
+// Every control carries an explanation, shown in ONE floating layer anchored to
+// the control rather than to the pointer.
+//
+// Ported from the ASV console's `#uiTip` (its `1035ef7`), for the reason that
+// mechanism exists: a native `title` tooltip is drawn by the BROWSER, which on
+// this platform parks it under the cursor — so the pointer sits on top of the
+// text it just asked for, and the page cannot move it. On hover the title is
+// STASHED off the element, which suppresses the native tip, and the text is
+// drawn below the control's left edge instead.
+//
+// Two deliberate differences from the sibling:
+//
+//   * the text lives HERE, in TIPS, not as `title=` in the markup. The sibling
+//     already had 118 hand-written titles and only needed re-positioning; this
+//     page had none, so the copy is new — and one reviewable block beats it
+//     scattered across 460 lines of form markup. `applyTips` writes it onto the
+//     elements at boot, so from that moment the DOM looks exactly like the
+//     sibling's and the layer below is the same code.
+//   * FOCUS shows a tip too, not just hover. This page is a form — 39 inputs
+//     and 11 selects — and a keyboard operator tabbing through it would
+//     otherwise be the only one who never sees an explanation.
+//
+// A tip NEVER overwrites a title already on the element: `planTarget` and the
+// loiter rows carry aria-labels and hand-set titles that say something the map
+// does not know.
+const TIPS = {
+  // -- vessel -------------------------------------------------------------- //
+  '#gondola':
+    'Which gondola the hull carries. The EM2040 curve is measured from six days '
+    + 'of flow-meter logs and is valid 1400–3100 rpm; the EM712 is the 2024 '
+    + 'trials configuration and is extrapolated above 2500 rpm.',
+  '#capacityPreset':
+    'What 100 indicated gauge points are worth in litres. These are NOT tank '
+    + 'volumes: the drawings put the physical tank at 250 L, while three '
+    + 'independent measurements put the gauge span nearer 206 L.',
+  '#capacity':
+    'Litres behind a full gauge. Typing here switches the preset to Custom.',
+  '#startLevel':
+    'Gauge reading at departure, as an indicated percentage rather than a '
+    + 'number of litres.',
+  '#reserve':
+    'Return-to-port floor, and a needle position rather than a volume. It is a '
+    + 'floor, not a target — every plan is judged against it.',
+  '#usableOut':
+    'Fuel available between the start level and the reserve floor, integrated '
+    + 'over the gauge profile rather than taken as a flat share of capacity.',
+
+  // -- mission clock ------------------------------------------------------- //
+  '#startTime':
+    'Optional. Read in YOUR local time zone and converted to UTC before it '
+    + 'reaches a forecast. Without it the plan still runs, on elapsed hours.',
+  '#waypoints':
+    'Distances from home to call out along the track, comma separated.',
+  '#waypointUnit':
+    'A display choice only. Switching it converts the numbers and never moves a '
+    + 'waypoint along the track.',
+  '#finishOut':
+    'Clock time back alongside, including every loiter hold.',
+  '#originLat':
+    'Departure latitude in signed decimal degrees, + north. Needed only for the '
+    + 'forecast currents.',
+  '#originLon':
+    'Departure longitude in signed decimal degrees, + east — so Delaware Bay is '
+    + 'negative. Needed only for the forecast currents.',
+  '#originOut':
+    'The typed position echoed back with its hemisphere, so a mistyped sign is '
+    + 'visible here rather than merely present in the plan.',
+  '#currentsBtn':
+    'Fill the per-leg current boxes from the NOAA Delaware Bay forecast, '
+    + 'dead-reckoning the mission from this position and start time. The one '
+    + 'thing in this planner that needs the network.',
+  '#currentsOut':
+    'Which forecast cycle filled the boxes and how much of the mission it '
+    + 'answered for. Bold and blinking means the read is still running; a red '
+    + 'note sitting still means it failed.',
+
+  // -- geometry ------------------------------------------------------------ //
+  '#planFile':
+    'CSV, GeoJSON, KML/KMZ, GPX or Hypack LNW. Geographic degrees are read '
+    + 'either decimal or degrees-minutes-seconds.',
+  '#planZone':
+    'UTM zone for eastings and northings, WGS84 only. Never guessed — the wrong '
+    + 'zone puts the survey hundreds of miles away with nothing on screen to '
+    + 'show for it. Delaware Bay is 18.',
+  '#planTarget':
+    'Which leg the imported lines become. Importing a multi-line file to a '
+    + 'transit is refused rather than flying the first of them.',
+  '#planHemi':
+    'Hemisphere for UTM northings.',
+  '#planImportBtn':
+    'Read the file and fill the geometry below. Check the summary against what '
+    + 'you actually drew before planning on it.',
+  '#outTrack':
+    'One waypoint per line, latitude then longitude. Leave empty to plan the '
+    + 'leg on its range and course alone.',
+  '#homeTrack':
+    'One waypoint per line. Leave empty to reverse the outbound track.',
+  '#patLat':
+    'Latitude of the START of the first survey line.',
+  '#patLon':
+    'Longitude of the START of the first survey line.',
+  '#patBearing':
+    'Bearing of line 1 in degrees true. Alternate lines run the reciprocal, '
+    + 'each starting where the last finished.',
+  '#patSpacing':
+    'Distance between adjacent survey lines.',
+  '#patOut':
+    'The pattern this anchor produces, using the line count and length from the '
+    + 'survey leg below — there is one place to change them.',
+  '#useField':
+    'Sample the forecast at every run — every survey line, every transit '
+    + 'segment — instead of taking one current per leg. Needs geometry and a '
+    + 'start time, and the network once to cache the cycle.',
+  '#clearGeomBtn':
+    'Drop all geometry. The plan falls back to plain ranges and courses, which '
+    + 'is exactly how it behaves with none of this filled in.',
+
+  // -- legs ---------------------------------------------------------------- //
+  '#outRange, #homeRange':
+    'Ground distance for this transit.',
+  '#outSpeed, #homeSpeed, #surSpeed':
+    'Speed over the ground. The through-water speed the engine actually has to '
+    + 'make is derived from this and the current.',
+  '#outCourse, #homeCourse':
+    'Course made good, degrees true. This is what decides whether the wind is '
+    + 'on the bow or astern.',
+  '#surLines':
+    'How many survey lines. An ODD count cannot balance the wind premium even '
+    + 'in principle — one direction gets an extra line.',
+  '#surRange':
+    'Length of a single survey line, not the total.',
+  '#surCourse':
+    'Bearing of line 1, degrees true. Alternate lines run the reciprocal.',
+  '#surTotal':
+    'Lines × line length — the ground the survey covers.',
+  '#outSea, #surSea, #homeSea':
+    'WMO sea state for this leg. The premium it applies is an ASSUMPTION, not a '
+    + 'fitted value: only its calm end has been measured, so treat it as a dial '
+    + 'to turn rather than a number to trust.',
+  '#outWindKt, #surWindKt, #homeWindKt':
+    'Wind speed on this leg. The premium scales with the SQUARE of it against a '
+    + '12 kt reference, so the high end runs away fast.',
+  '#outWindFrom, #surWindFrom, #homeWindFrom':
+    'The direction the wind blows FROM, as at sea. Dead on the bow costs the '
+    + 'full premium and a following wind gives it back — but not evenly, '
+    + 'because fuel is convex in RPM.',
+  '#outCurKt, #surCurKt, #homeCurKt':
+    'Drift in knots. Applied kinematically, so it moves the FUEL and never the '
+    + 'clock. It partly double-counts against the speed law, which was fitted '
+    + 'in an unrecorded tide.',
+  '#outCurSet, #surCurSet, #homeCurSet':
+    'The direction the current flows TOWARD — the opposite convention to wind, '
+    + 'as at sea. Getting these the same way round is the classic way to plan a '
+    + 'mission backwards.',
+  '#outLoiter, #surLoiter, #homeLoiter':
+    'Time held on station making no way, charged at the measured 0.95 L/h idle '
+    + 'burn. Taken at the START of the leg, so a hold on the way home arrives '
+    + 'home late.',
+  '#outLoiterUnit, #surLoiterUnit, #homeLoiterUnit':
+    'Whether the loiter box above is read as minutes or hours.',
+  '[data-loiter-add]':
+    'Add this much to the leg’s loiter hold.',
+  '[data-loiter-clear]':
+    'Clear this leg’s loiter hold.',
+
+  // -- actions ------------------------------------------------------------- //
+  '#planForm button[type="submit"]':
+    'Run the mission and report fuel, endurance and margin over the reserve.',
+  '#maxBtn':
+    'Solve for the longest survey that still returns at or above the floor — '
+    + 'against whichever floor binds first, capacity or needle, so the answer '
+    + 'is never a distance the planner then flags red.',
+  '#helpBtn':
+    'Open the quick start. It renders the repo’s own QUICKSTART.md, so the '
+    + 'document and the help cannot drift apart.',
+  '#helpClose':
+    'Close the quick start. Clicking outside it or pressing Escape does the '
+    + 'same.',
+
+  // -- results ------------------------------------------------------------- //
+  '#legTable th:nth-child(4)':
+    'Engine speed this leg needs, after the sea-state and heading premiums.',
+  '#legTable th:nth-child(5)':
+    'Combined sea-state and heading premium on required RPM.',
+  '#legTable th:nth-child(8)':
+    'Gauge reading at the end of this leg.',
+  '#legTable th:nth-child(10)':
+    'Nautical miles per litre on this leg — the efficiency the conditions '
+    + 'actually allowed, not the flat-water figure.',
+  '#marksTable th:nth-child(6)':
+    'Indicated gauge percentage at this mark, which is what the operator will '
+    + 'actually see.',
+  '#sensTable th:nth-child(1)':
+    'How far the sea-state premium is shifted from the table value.',
+  '#legNotes':
+    'Per-leg notes, including any leg whose required RPM sits outside the '
+    + 'window the fuel law was fitted over.',
+  '#maxOut':
+    'The solved maximum survey, and whether the mission as entered fits inside '
+    + 'it.',
+  '#reportOut':
+    'Where this plan’s Markdown report was written.',
+};
+
+/** Write the copy onto the controls, once, at boot.
+ *
+ *  Never clobbers a title already there, and never invents one for a selector
+ *  that matches nothing — a tip pointing at a control that has been renamed is
+ *  a silent no-op, which is what the coverage test exists to catch. */
+function applyTips() {
+  let applied = 0;
+  Object.entries(TIPS).forEach(([sel, text]) => {
+    document.querySelectorAll(sel).forEach((el) => {
+      if (!el.getAttribute('title')) { el.setAttribute('title', text); applied += 1; }
+    });
+  });
+  return applied;
+}
+
+const TIP_DELAY_MS = 400;
+const TIP_GAP = 8;
+const TIP_MARGIN = 4;
+
+/** Where the tip goes: below the control's left edge, flipped above when the
+ *  bottom would clip, clamped into the viewport either way. Pure, so it is
+ *  testable without a layout. */
+function tipPos(r, tw, th, ww, wh) {
+  const left = Math.max(TIP_MARGIN, Math.min(ww - tw - TIP_MARGIN, r.left));
+  let top = r.bottom + TIP_GAP;
+  if (top + th > wh - TIP_MARGIN) top = r.top - TIP_GAP - th;   // flip above
+  if (top < TIP_MARGIN) top = Math.min(wh - th - TIP_MARGIN, r.bottom + TIP_GAP);
+  return { left, top };
+}
+
+let tipTimer = null;
+let tipEl = null;
+let tipStash = '';
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipTimer = null;
+  const layer = $('uiTip');
+  if (layer) layer.style.display = 'none';
+  // Restore the title ONLY if it is still absent. #currentsOut, #maxOut and the
+  // readouts are rewritten at runtime, and a value written mid-hover has to win
+  // over the stash — the sibling learned this with five such readouts.
+  if (tipEl) {
+    if (!tipEl.getAttribute('title')) tipEl.setAttribute('title', tipStash);
+    tipEl = null;
+    tipStash = '';
+  }
+}
+
+function showTip(el) {
+  const text = el.getAttribute('title');
+  if (!text) return;
+  tipEl = el;
+  tipStash = text;
+  el.removeAttribute('title');            // suppress the browser's own tip
+  tipTimer = setTimeout(() => {
+    const layer = $('uiTip');
+    if (!layer) return;
+    layer.textContent = text;
+    layer.style.display = 'block';
+    layer.style.left = '0px';
+    layer.style.top = '-9999px';          // measure before placing
+    const p = tipPos(el.getBoundingClientRect(), layer.offsetWidth,
+                     layer.offsetHeight, window.innerWidth, window.innerHeight);
+    layer.style.left = `${p.left}px`;
+    layer.style.top = `${p.top}px`;
+  }, TIP_DELAY_MS);
+}
+
+document.addEventListener('mouseover', (e) => {
+  if (tipEl && tipEl.contains(e.target)) return;     // still on the same control
+  const el = e.target.closest ? e.target.closest('[title]') : null;
+  hideTip();
+  if (el) showTip(el);
+});
+document.addEventListener('mouseout', (e) => {
+  if (tipEl && !tipEl.contains(e.relatedTarget)) hideTip();
+});
+// Keyboard: tabbing onto a control shows its tip, leaving hides it. focusin
+// bubbles where focus does not, so one listener covers the whole form.
+document.addEventListener('focusin', (e) => {
+  const el = e.target.closest ? e.target.closest('[title]') : null;
+  hideTip();
+  if (el) showTip(el);
+});
+document.addEventListener('focusout', hideTip);
+// A click means acting, not reading; Escape dismisses without moving the mouse.
+document.addEventListener('mousedown', hideTip, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); });
+window.addEventListener('blur', hideTip);
 
 const KM_PER_NM = 1.852;
 // What the waypoint box is currently written in. Needed because the <select>

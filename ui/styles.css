@@ -306,6 +306,29 @@ tr.here td { font-weight: 700; }
   #currentsOut.busy { animation: none; }
 }
 
+/* THE HOVER-TIP LAYER. One element for the whole page, positioned in viewport
+   coordinates by app.js and anchored to the CONTROL rather than the pointer —
+   which is the entire reason it exists instead of native `title` tooltips.
+
+   `pointer-events: none` is load-bearing, not decoration: without it the tip
+   can land under the cursor, take the mouseover, and flicker itself away.
+   `display` is owned by the JS, which toggles it both directions. */
+#uiTip {
+  display: none;
+  position: fixed;
+  z-index: 70;
+  pointer-events: none;
+  max-width: 24rem;
+  padding: .45rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: .8rem;
+  line-height: 1.45;
+  box-shadow: var(--shadow);
+}
+
 /* Geometry entry. Tracks are typed as coordinates, so the boxes are
    monospaced — a transposed digit in a column of positions is far easier to
    catch when the columns line up. */

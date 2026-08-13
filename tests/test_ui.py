@@ -262,5 +262,109 @@ class TestQuickStart(unittest.TestCase):
         self.assertNotIn('Quick start</h1>', html)
 
 
+class TestHoverTips(unittest.TestCase):
+    """Every control explains itself, in a layer anchored to the control.
+
+    The load-bearing check is coverage: a control added without a tip must fail
+    here, or "all components" quietly decays to "the components that had one on
+    the day it was written"."""
+
+    # Controls an operator drives. `output` is included because a readout that
+    # says "usable" without saying what was integrated to get it is exactly the
+    # thing a tip is for.
+    CONTROL = re.compile(r'<(input|select|button|textarea|output)\b[^>]*>',
+                         re.IGNORECASE)
+    ID = re.compile(r'\bid="([^"]+)"')
+
+    def setUp(self):
+        self.html = (UI / 'index.html').read_text(encoding='utf-8')
+        self.js = (UI / 'app.js').read_text(encoding='utf-8')
+
+    def _tips_block(self) -> str:
+        start = self.js.index('const TIPS = {')
+        end = self.js.index('\n};', start)
+        return self.js[start:end]
+
+    def _tip_selectors(self) -> set[str]:
+        """Every selector TIPS covers, split out of its grouped keys."""
+        block = self._tips_block()
+        keys = re.findall(r"^  '([^']+)':", block, re.MULTILINE)
+        return {part.strip() for key in keys for part in key.split(',')}
+
+    def _controls_with_ids(self) -> set[str]:
+        ids = set()
+        for tag in self.CONTROL.finditer(self.html):
+            found = self.ID.search(tag.group(0))
+            if found:
+                ids.add(found.group(1))
+        return ids
+
+    def test_every_control_with_an_id_has_a_tip(self):
+        """THE CHECK THAT ENFORCES THE ASK. Add a control, get a failure until
+        it is explained."""
+        covered = {s[1:] for s in self._tip_selectors() if s.startswith('#')
+                   and s[1:].isidentifier()}
+        missing = sorted(self._controls_with_ids() - covered)
+        self.assertEqual(missing, [], f'controls with no hover tip: {missing}')
+
+    def test_the_loiter_buttons_are_covered_by_attribute(self):
+        """They carry no id — three per leg, told apart only by their data
+        attributes — so they are covered by selector instead."""
+        sel = self._tip_selectors()
+        self.assertIn('[data-loiter-add]', sel)
+        self.assertIn('[data-loiter-clear]', sel)
+        self.assertIn('data-loiter-add=', self.html)
+        self.assertIn('data-loiter-clear=', self.html)
+
+    def test_no_tip_points_at_a_control_that_does_not_exist(self):
+        """A renamed id leaves the tip silently unapplied. Only plain `#id`
+        selectors are checked; the structural ones are covered above."""
+        stale = sorted(s for s in self._tip_selectors()
+                       if s.startswith('#') and s[1:].isidentifier()
+                       and f'id="{s[1:]}"' not in self.html)
+        self.assertEqual(stale, [], f'tips for absent controls: {stale}')
+
+    def test_a_tip_never_overwrites_a_title_already_there(self):
+        """Some controls carry a hand-set title or aria-label that says
+        something the map does not know."""
+        self.assertIn("if (!el.getAttribute('title'))", self.js)
+
+    def test_the_native_tooltip_is_suppressed_and_restored(self):
+        """The title is stashed off the element so the browser cannot draw its
+        own tip under the cursor, and put back on the way out — but only if a
+        runtime write has not already replaced it."""
+        self.assertIn("el.removeAttribute('title')", self.js)
+        self.assertIn("if (!tipEl.getAttribute('title')) "
+                      "tipEl.setAttribute('title', tipStash)", self.js)
+
+    def test_the_tip_is_anchored_to_the_control_not_the_pointer(self):
+        """The whole reason this exists: a pointer-anchored tip sits under the
+        cursor. `tipPos` takes the element's rect, never an event position."""
+        self.assertIn('el.getBoundingClientRect()', self.js)
+        self.assertNotIn('clientX', self._tips_block())
+        pos = self.js[self.js.index('function tipPos('):]
+        self.assertNotIn('clientX', pos[:pos.index('\n}')])
+
+    def test_the_tip_flips_above_when_the_bottom_would_clip(self):
+        self.assertIn('top = r.top - TIP_GAP - th', self.js)
+
+    def test_the_layer_cannot_take_the_pointer(self):
+        """Without this the tip can land under the cursor, take the mouseover
+        and flicker itself away."""
+        css = (UI / 'styles.css').read_text(encoding='utf-8')
+        block = css[css.index('#uiTip {'):]
+        self.assertIn('pointer-events: none', block[:block.index('}')])
+        self.assertIn('id="uiTip"', self.html)
+
+    def test_a_keyboard_operator_gets_the_tips_too(self):
+        """39 inputs and 11 selects: whoever tabs through this form would
+        otherwise be the only person who never sees an explanation."""
+        self.assertIn("addEventListener('focusin'", self.js)
+        self.assertIn("addEventListener('focusout'", self.js)
+
+    def test_the_tips_are_applied_at_boot(self):
+        self.assertIn('applyTips();', self.js)
+
+
 if __name__ == '__main__':
     unittest.main()
