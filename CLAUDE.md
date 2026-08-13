@@ -1,12 +1,13 @@
 # DriX mission fuel planner — START HERE
 
-Mission fuel/endurance planner for the DriX-8. Enter sea state, a wind vector,
-and three legs (transit out / survey / transit home); get per-leg burn and
-margin against the 25% return-to-port reserve.
+Mission fuel/endurance planner for the DriX-8. Set up three legs (transit out /
+survey / transit home), each with its own sea state, wind and current; get
+per-leg burn, a mission clock, and margin against the 25% return-to-port
+reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 122 tests — must stay green
+python -m unittest discover -s tests      # 219 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -18,22 +19,25 @@ block is tagged `"fitted": true/false` so measurements are never confused with
 assumptions. Do not hardcode numbers in `engine.py` or the UI; do not change a
 coefficient without knowing which measurement or decision it traces to.
 
-## Where things stand (2026-08-09, model.json v2.6.0)
+## Where things stand (2026-08-12, model.json v2.6.0)
 
-Tree clean, everything pushed, **122 tests** green. Six days of MCAP data
-(04–09 Aug) cached and adopted. Nothing half-finished.
+Tree clean, both remotes pushed, **219 tests** green. Six days of MCAP data
+(04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
-**What the planner does, in one paragraph.** Enter sea state, a wind vector, and
-three legs. It converts each leg's required SOG to RPM through the gondola's
-speed law, adds a sea-state and heading premium, reads fuel off the gondola's
-fuel law, and judges the result against a reserve floor that is a **needle
-position, not a number of litres**. Surveys are flown and costed line by line.
-Every plan carries a mission clock, timed distance-from-home and survey-phase
-marks, a sensitivity band, and one `verdict` field every surface renders.
+**What the planner does, in one paragraph.** Three legs, each carrying its OWN
+sea state, wind and current, plus an optional loiter hold. For every leg it
+resolves that weather, converts the required SOG to a through-water speed
+through the current vector, puts THAT through the gondola's speed law to get
+RPM, adds the sea-state and heading premiums, reads fuel off the gondola's fuel
+law, and judges the total against a reserve floor that is a **needle position,
+not a number of litres**. Surveys are flown and costed line by line. Every plan
+carries a mission clock, bracketed marks (departure → waypoints → survey →
+waypoints → arrival), a sensitivity band, one `verdict` field every surface
+renders, and a Markdown report written to `docs/missions/`.
 
 **The numbers as they stand** (EM2040, 8 kt, full tank, reading A, 25% floor,
-**sea state 2** — the `Environment` default; the max-survey row is not a
-constant, it runs 398.5 NM in flat calm and 329.3 NM at sea state 3):
+sea state 2 — the max-survey row is not a constant, it runs 398.5 NM in flat
+calm and 329.3 NM at sea state 3):
 
 | | |
 |---|---|
@@ -48,21 +52,59 @@ been measured. Everything below 68% indicated is inference. See open thread 1 �
 it is the single highest-value measurement outstanding and `tools/reserve_band.py`
 sizes it.
 
-### What changed on 2026-08-09, newest first
+### TWO REPOSITORIES — read this before pushing
+
+- **`AndyMcLeod/DriX-Fuel-Planner` is private and canonical.** All history.
+- **`AndyMcLeod/DriX-Fuel-Planner-Public` is PUBLIC, MIT.** Built as a fresh
+  single-commit tree because ~38 pre-scrub commits here carry client
+  identifiers permanently.
+
+**`python tools/make_public.py <dest>` is the only supported way to build the
+public copy**, and it reads `git archive HEAD` — **commit first, it cannot see
+the working tree.** Every public/private difference lives in that script or it
+reverts on the next export. It refuses to finish if a client identifier
+survives; that sweep has already stopped two accidental republications.
+
+### What changed 2026-08-11/12 — the current shape of the thing
 
 Read the per-topic sections below for detail; this is the orientation.
 
-1. **Both reports now quote the drawdown spec**, computed by `tools/drawdown.py`
-   which `reserve_band.py` and both builders share.
-2. **Max survey answers in LINES** (`max_survey_lines`), not just distance —
-   the actionable answer when an area will not fit in one run.
-3. **Surveys are flown line by line** — lines / line length / bearing, alternate
-   lines reciprocal. Fuel is summed per line because the fuel law is convex in
-   RPM, which the old cancelled-premium survey understated by up to 17%.
-4. **Reserve floor raised 15% → 25%** (Andy). Costs 12% of mission fuel.
-5. **Mission waypoints at 13 and 26 km** (km or NM since 2026-08-11), in and out, plus survey
-   arrival and departure, all on a mission clock.
-6. **Reading (A) adopted** for the gauge: it spans the tank and is non-linear.
+1. **Weather is PER LEG** — sea state, wind speed/direction, current
+   speed/set, each optional (`None` = fall back to the mission `Environment`;
+   `0` is a real value). The Environment card is gone from the UI, which sends
+   `environment: {}`.
+2. **Current is kinematic**, not an empirical premium: `required_stw_kt()`
+   converts SOG to through-water speed per line. It moves the fuel, never the
+   clock. Partly double-counts against the SOG-fitted speed law — the leg note
+   says so.
+3. **Loiter holds** per leg, at the measured 0.95 L/h idle burn, taken at the
+   **START** of the leg so a hold on the way home arrives home late.
+4. **Marks bracket the mission**: `home_departure` … `home_arrival`, and
+   `home_arrival.elapsed_hours == total_hours` is a pinned identity.
+5. **Mission waypoints** (renamed from home marks) in **km or NM** — the unit
+   is a display choice that never moves a waypoint.
+6. **Max survey fills in the line count**, and the field stays editable.
+7. **All documents live in `docs/`**; `README.md` and `CLAUDE.md` stay at root.
+   **Every plan writes a report to `docs/missions/`** (gitignored).
+8. **A quick-start help panel** renders `docs/QUICKSTART.md` itself — one
+   source, no drift.
+9. **A 28-finding adversarial review** landed on 2026-08-12; every finding is
+   fixed and mutation-checked. See its section below before assuming a
+   defensive-looking guard is redundant.
+
+### House rules this project runs on
+
+- **Commit then push, docs in the SAME commit**, then export to the public repo.
+- **Mutation-test every new guard.** A test that has not been shown to fail is
+  not evidence. Use a sidecar + atomic write + verified restore; a killed runner
+  has left real source mutated here before.
+- **Restart the server after editing `server.py`** — Python does not reload,
+  while the UI files beside it do, which makes the staleness confusing.
+- **Verify rendered output by LOOKING at it.** Rasterise documents, screenshot
+  the UI, extract PDF text with PyMuPDF (a byte grep of a PDF proves nothing).
+  Three separate defects this session were invisible to every structural check.
+- **The Browser pane cannot screenshot while hidden.** Headless Chrome against
+  the running app is the working fallback (`--headless=new --screenshot`).
 
 ### How the gauge reading was settled — the history worth keeping
 
@@ -140,9 +182,14 @@ reading is worth 31 L.
    Until then the wind model stays an assumption.
 4. **No cruise data below 1400 rpm (~5.3 kt)**; a few steady runs at 1100–1400
    would close the gap between the fitted floor and the idle point.
-5. **Speed law is SOG-based** — reciprocal-heading pairs would strip the tide out.
+5. **Speed law is SOG-based** — reciprocal-heading pairs would strip the tide
+   out. This matters more now that current is modelled explicitly: the two
+   partly double-count, and only a reciprocal-pair refit separates them.
 6. **Offered but not done:** importing the endurance sheet into the live Hourly
    Ops Log Google Sheet. Needs Andy's go-ahead; it touches a live ops document.
+6b. **Offered but not done:** a mission-name box in the UI. The report filename
+   already takes an optional `title` from the request body and slugs it, but
+   the UI never sends one, so app-generated reports are timestamp-only.
 7. ~~ROS 2 topic reference lagging.~~ **Rebuilt and baked 2026-08-09** — it had
    still been carrying the retracted "~2.30 L per point, non-linear" claim.
    That was the SIXTH place that retraction was found and the first outside
