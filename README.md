@@ -291,6 +291,11 @@ averaged number at the point the tide is doing the most. The plan reports how
 many sampled runs the field answered for and how many of those were estimated,
 and says so in its warnings.
 
+**[`docs/CURRENTS.md`](docs/CURRENTS.md) is the full account** — the OPeNDAP
+product choice, what a cycle is, how one is selected, the projection and its
+measured error, the two seams a current enters a plan through, and a worked
+example with real numbers.
+
 `currents.py` is the module behind it — standard library, no new dependency —
 and it is a usable tool on its own:
 

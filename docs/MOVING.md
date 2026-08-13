@@ -1,8 +1,14 @@
 # Moving the fuel planner to another Windows machine
 
 The planner itself is **standard library Python and three static files**. There
-is nothing to compile, no package to install, no service to register and no
-network access required. Moving it is: copy a folder, run one script.
+is nothing to compile, no package to install and no service to register. Moving
+it is: copy a folder, run one script.
+
+**One feature needs a network, and only one:** reading currents off the NOAA
+forecast. Every other thing here — planning, the max-survey solve, the gauge
+arithmetic, the reports — works with no signal at all, and currents can always
+be typed in by hand. Copy `ofs_cache\` (below) and even that works offline until
+the cached cycle runs out.
 
 The analysis *pipeline* behind it — the document builders and the MCAP refit —
 is a different story and needs pip packages plus the source bags. That is
@@ -71,9 +77,10 @@ bag data**, which is over a thousand times the size of the project:
 
 | | size | copy it? |
 |---|---|---|
-| Project files (code, UI, model, and `docs\` with all four documents) | **5.5 MB** | **yes** |
+| Project files (code, UI, model, and everything in `docs\`) | **5.5 MB** | **yes** |
 | `.git\` | 15 MB | yes, if you want history |
 | `D8_2040\` — raw MCAP bags | **6.5 GB** | **no** |
+| `ofs_cache\` — cached NOAA forecast cycles | **33 MB each** | optional — see below |
 | `tools\rosbags\` — extraction caches | 18 MB | only for the pipeline (§5) |
 | `tools\node_modules\` | 9 MB | no — `npm install` regenerates it |
 | `docs\missions\` — generated mission reports | grows | no, they are yours to keep or drop |
@@ -81,6 +88,15 @@ bag data**, which is over a thousand times the size of the project:
 
 The whole planner is **5.5 MB**, and 3.6 MB of that is the four Word/PDF
 documents in `docs\`. It fits on anything.
+
+**`ofs_cache\` is worth a thought rather than a rule.** Each cached cycle is
+about 33 MB and covers 53 hours. Copy it and the destination can read currents
+for missions inside that window with no network at all; leave it and the first
+press of **Currents from forecast** fetches one, which needs a signal and takes
+about half a minute. On an air-gapped machine, copy it — and remember the
+forecast is perishable, so a cycle more than a couple of days old will be
+answering by projection rather than forecast (see
+[`CURRENTS.md`](CURRENTS.md)).
 
 Robocopy with the same exclusions the repo already declares in `.gitignore`:
 

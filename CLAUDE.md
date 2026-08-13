@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 389 tests — must stay green
+python -m unittest discover -s tests      # 396 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **389 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **396 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -1501,6 +1501,23 @@ spacer and the amber cell runs entirely.
 
 ## Documents
 
+**⚠ THE FOUR GENERATED DOCUMENTS PREDATE THE CURRENTS AND GEOMETRY WORK.** They
+were last built at `8c15539`, before `47734cf` landed the forecast currents, and
+they say nothing about currents, mission geometry, turn costs or projection.
+They are not WRONG — nothing in them was invalidated — but they are silent on
+everything since 2026-08-12. Bringing them current means extending the builders
+(a currents chapter belongs in the Methods document, whose subject is exactly
+"how the data is acquired and how it reaches the numbers") **and re-exporting
+each PDF by hand from Word**, which no script can do. Until then
+`docs/CURRENTS.md` carries that material.
+
+- **`CURRENTS.md`** — acquisition and model integration end to end: the OPeNDAP
+  product choice and why the regridded one, what a cycle is, cycle selection and
+  the out-of-range ladder, the tidal projection with its measured error table,
+  the two seams a current enters a plan through, what it may and may not change,
+  and a **worked example** with real numbers off a named cycle. Hand-written, in
+  `docs/`, alongside QUICKSTART and MOVING. Read it before touching
+  `currents.py`.
 - `DriX8_Fuel_Gauge_Linearity.docx` / `.pdf` — 10 pages with figures: the tank
   gauge measured against the flow meter. Establishes the gauge scale, shows why
   the apparent band-to-band trend is not significant, and states plainly that
@@ -1660,10 +1677,14 @@ downstream reverts on the next export — this has now bitten twice:
 
 **The commentary split is deliberate.** Static explanatory prose is marked
 `<p class="note commentary">` and the public build drops it (Andy: cleaner view
-in public; the private UI keeps the rest). **Four blocks remain** — survey
-lines, the compass legend, mission marks, and the sensitivity preamble — so
-`EXPECTED_COMMENTARY` is 4. It was 6 until the mission-clock note and the whole
-tank/gauge card were deleted outright on 2026-08-11 (see below).
+in public; the private UI keeps the rest). **`EXPECTED_COMMENTARY` is 8** as of
+2026-08-13: survey lines, the compass legend, mission marks, the sensitivity
+preamble, the forecast-currents note, and three that arrived with the mission
+geometry card (the importer, the pattern and the field). It was 6, then 4 when
+the mission-clock note and the whole tank/gauge card were deleted on 2026-08-11.
+**The script is the authority on this number, not this paragraph** — it counts
+what it removed and aborts on a mismatch, and this prose said 4 for a day after
+the count had moved.
 
 The **id-bearing** notes are JS-filled with computed output and **must never be
 stripped**. Two survive: `legNotes`, which carries the per-leg extrapolation

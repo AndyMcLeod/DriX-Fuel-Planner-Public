@@ -42,8 +42,12 @@ be there, and fills the current boxes. Things to know:
   the clock on the wall.
 - It reports the along-track component per leg.
   **Plus is a fair tide, minus is foul.** Check that sign before you believe it.
-- A leg it cannot see is **left alone, not zeroed**. Empty means no data, which
-  is not the same as slack water.
+- A leg over **land or outside the model** is **left alone, not zeroed**. Empty
+  means no data, which is not the same as slack water.
+- A leg past the end of the **forecast** is **estimated**, not left empty: real
+  data is tried first, and only if none exists is the value borrowed from a
+  whole tidal cycle away. Anything estimated says `ESTIMATED` in the note and in
+  the plan's warnings. Treat it as about 0.2 kt of slack, and check it.
 - Type over any of it you disagree with. Doing so drops the forecast label from
   the mission report, because those numbers are then yours.
 - This is the only button here that needs a network. Everything else works with

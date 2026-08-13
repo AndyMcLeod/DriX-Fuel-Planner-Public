@@ -505,6 +505,48 @@ class TestFieldProjection(CacheCase):
         self.assertEqual((f.covered, f.estimated), (0, 0))
 
 
+class TestCurrentsDocument(unittest.TestCase):
+    """`docs/CURRENTS.md` quotes numbers a reader acts on, so they are pinned.
+
+    Only the ones that change a decision: how far a projection may reach, what
+    the interval is, and the shape of a cycle. A document that quietly disagreed
+    with the code about the projection cap would be worse than no document."""
+
+    DOC = Path(__file__).resolve().parent.parent / 'docs' / 'CURRENTS.md'
+
+    def setUp(self):
+        self.text = self.DOC.read_text(encoding='utf-8')
+
+    def test_the_document_exists_and_is_reachable_from_the_readme(self):
+        readme = (self.DOC.parent.parent / 'README.md').read_text(encoding='utf-8')
+        self.assertIn('docs/CURRENTS.md', readme)
+
+    def test_the_tidal_period_it_quotes_is_the_one_the_code_uses(self):
+        self.assertIn(f'{ofs.M2_PERIOD_H}', self.text)
+
+    def test_the_projection_cap_it_quotes_is_the_one_enforced(self):
+        self.assertIn(f'is {ofs.MAX_PROJECT_CYCLES} for that reason', self.text)
+
+    def test_the_cycle_shape_it_describes_is_the_one_assumed(self):
+        self.assertIn(f'{ofs.NOWCAST_H} nowcast hours', self.text)
+        self.assertIn(f'{ofs.FORECAST_H} forecast hours', self.text)
+
+    def test_it_says_a_position_without_water_is_never_answered(self):
+        """The one rule the projection work narrowed rather than removed. If
+        this ever stops being true the document must not still claim it."""
+        self.assertIn('never moves a position', self.text)
+        self.assertIn('no model water is never answered', self.text)
+
+    def test_the_worked_example_names_the_cycle_it_came_from(self):
+        """A transcript against an unnamed cycle is not reproducible, and the
+        forecast is perishable — the same rule the mission report follows."""
+        self.assertIn('dbofs_20260813_t00z', self.text)
+
+    def test_it_carries_no_note_addressed_to_its_own_maintainer(self):
+        for marker in ('TODO', 'FIXME', 'XXX:', '(undocumented'):
+            self.assertNotIn(marker, self.text)
+
+
 class TestRemoteCycleLookup(unittest.TestCase):
     """Which cycle NOAA would have, worked out from the catalog alone.
 
