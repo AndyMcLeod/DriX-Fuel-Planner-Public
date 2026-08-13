@@ -45,6 +45,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Literal
 
+import geometry
+
 MODEL_PATH = Path(__file__).with_name('model.json')
 
 KM_PER_NM = 1.852
@@ -222,6 +224,28 @@ class Leg:
     # should be one number for two days. A survey flown into a building sea is
     # an ordinary mission, and averaging it away helped nobody.
     wmo_sea_state: int | None = None
+    # -- GEOMETRY (2026-08-13). Optional, and absent means every figure below
+    # is computed exactly as it always was — pinned by a test.
+    #
+    # `track` is a polyline of (lat, lon) for a transit; `pattern` is a survey
+    # lawnmower as a dict of the SurveyPattern fields. Give either and the
+    # leg's distance and course are DERIVED from it, and each straight piece
+    # of the path carries its own position and time.
+    #
+    # WHY: without geometry a leg is a distance and a course, which cannot say
+    # where the vehicle is at 14:20 — so a tide could only ever be applied as
+    # one averaged number per leg. Over a survey held on one ground through a
+    # tidal cycle that average is not just coarse, it is false: the vector
+    # mean of a reversing current is near zero, so the plan reads slack while
+    # the hull works against 2 kt all day.
+    track: list | None = None
+    pattern: dict | None = None
+    # Explicit survey lines, as IMPORTED from a line plan rather than
+    # generated from a pattern. A real plan is whatever the surveyor drew —
+    # lines of differing length, a gap where a shoal is, a run-in at one end —
+    # and forcing that through a regular pattern would quietly straighten it.
+    survey_lines: list | None = None
+    turn_radius_nm: float = 0.0
 
     def environment(self, env: 'Environment') -> 'Environment':
         """The mission environment with this leg's own weather laid over it."""
@@ -233,14 +257,56 @@ class Leg:
             current_speed_kt=pick(self.current_speed_kt, env.current_speed_kt),
             current_set_deg=pick(self.current_set_deg, env.current_set_deg))
 
+    def geometry_runs(self, max_run_nm: float = 1.0,
+                      include_turns: bool = True) -> list | None:
+        """The path as straight pieces with positions, or None when this leg
+        carries no geometry. One seam: everything geometric reads this."""
+        if self.pattern:
+            spec = dict(self.pattern)
+            turn = geometry.TurnModel(
+                radius_nm=float(spec.pop('turn_radius_nm', 0.0) or 0.0),
+                speed_kt=float(spec.pop('turn_speed_kt', 0.0) or 0.0))
+            pattern = geometry.SurveyPattern(
+                anchor=geometry.Point(float(spec['anchor'][0]), float(spec['anchor'][1])),
+                bearing_deg=float(spec['bearing_deg']),
+                length_nm=float(spec['length_nm']),
+                spacing_nm=float(spec['spacing_nm']),
+                lines=int(spec['lines']),
+                step_bearing_deg=(None if spec.get('step_bearing_deg') is None
+                                  else float(spec['step_bearing_deg'])),
+                turn=turn, name=self.name)
+            return geometry.runs_from(pattern, max_run_nm, include_turns)
+        if self.survey_lines:
+            turn = geometry.TurnModel(radius_nm=float(self.turn_radius_nm or 0.0))
+            runs = geometry.imported_lines_runs(
+                [[geometry.Point(float(a), float(b)) for a, b in line]
+                 for line in self.survey_lines],
+                turn if include_turns else geometry.TurnModel(radius_nm=0.0),
+                self.name)
+            out = []
+            for r in runs:
+                out.extend(r.split(max_run_nm))
+            return out
+        if self.track and len(self.track) >= 2:
+            pts = [geometry.Point(float(a), float(b)) for a, b in self.track]
+            return geometry.runs_from(pts, max_run_nm)
+        return None
+
     def resolved_distance_nm(self) -> float:
-        """Ground covered. Derived from the lines when they are given."""
+        """Ground covered. Derived from the geometry when there is any, then
+        from the lines, then the plain distance."""
+        runs = self.geometry_runs()
+        if runs is not None:
+            return sum(r.distance_nm for r in runs)
         if self.kind == 'survey' and self.lines:
             return self.lines * float(self.line_length_nm or 0.0)
         return self.distance_nm
 
     def line_plan(self) -> list[tuple[float, float]]:
         """(distance_nm, course_deg) for each run this leg is flown as."""
+        runs = self.geometry_runs()
+        if runs is not None:
+            return [(r.distance_nm, r.course_deg) for r in runs]
         if self.kind != 'survey':
             return [(self.distance_nm, self.course_deg)]
         if self.lines:
@@ -661,7 +727,9 @@ class PlanResult:
 
 def plan_leg(leg: Leg, env: Environment, model: Model,
              sea_override: dict[int, float] | None = None,
-             premium_delta: float = 0.0, gondola: str = 'em712') -> LegResult:
+             premium_delta: float = 0.0, gondola: str = 'em712',
+             env_at=None, start_hours: float = 0.0,
+             max_run_nm: float = 1.0) -> LegResult:
     """Fuel for one leg. `premium_delta` shifts the total premium, for
     sensitivity runs. `gondola` selects which speed-vs-RPM law converts the
     required SOG into engine RPM; the fuel-vs-RPM law is shared.
@@ -684,24 +752,48 @@ def plan_leg(leg: Leg, env: Environment, model: Model,
     # current is directional: a reciprocal pair does not see the same water.
     rpm_benign = stw_kt = 0.0
 
-    runs = leg.line_plan()
+    # Each run carries its own environment when a field was supplied AND this
+    # leg has geometry to locate it with. `env_at(lat, lon, hours)` is INJECTED
+    # rather than fetched, so the engine keeps its one useful property: pure
+    # computation, no I/O, testable offline against a field made of arithmetic.
+    geo = leg.geometry_runs(max_run_nm) if env_at is not None else None
+    if geo is not None:
+        runs = [(r.distance_nm, r.course_deg, r) for r in geo]
+    else:
+        runs = [(nm, course, None) for nm, course in leg.line_plan()]
+
     litres = 0.0
     w_head = w_rpm = w_prem = w_stw = w_benign = 0.0   # distance-weighted means
     rpms: list[float] = []
     prems: list[float] = []
     stws: list[float] = []
-    for nm, course in runs:
-        # The current is resolved PER LINE, before any premium: it changes the
+    run_hours = start_hours + leg.loiter_hours       # the hold comes first
+    for nm, course, run in runs:
+        # The current is resolved PER RUN, before any premium: it changes the
         # through-water speed the hull must make to hold this SOG, which is a
         # different thing from the empirical premium and enters the chain one
         # step earlier. Over a reciprocal pair it helps one way and hurts the
         # other, and the two do not cancel, for the same reason the wind
         # premium does not: fuel is convex in RPM.
+        #
+        # With geometry the run also knows WHERE and WHEN it is, so the field
+        # is sampled at the midpoint of the piece rather than one value being
+        # stretched across the whole leg. The same convexity argument that
+        # makes a line-by-line sum necessary across HEADINGS makes this
+        # necessary across TIME.
+        env_i = env
+        if run is not None:
+            mid = geometry.interpolate(run.start, run.end, 0.5)
+            half = (nm / leg.speed_kt / 2.0) if leg.speed_kt > 0 else 0.0
+            env_i = env_at(mid.lat, mid.lon, run_hours + half) or env
+            run_hours += (nm / leg.speed_kt) if leg.speed_kt > 0 else 0.0
+        sea_i = (sea_p if env_i is env
+                 else model.sea_state_premium(env_i.wmo_sea_state, sea_override))
         stw_i = required_stw_kt(leg.speed_kt, course,
-                                env.current_speed_kt, env.current_set_deg)
+                                env_i.current_speed_kt, env_i.current_set_deg)
         benign_i = max(0.0, model.rpm_for_speed(stw_i, gondola))
-        head_i = model.heading_premium(course, env.wind_from_deg, env.wind_speed_kt)
-        prem_i = sea_p + head_i + premium_delta
+        head_i = model.heading_premium(course, env_i.wind_from_deg, env_i.wind_speed_kt)
+        prem_i = sea_i + head_i + premium_delta
         rpm_i = benign_i * (1.0 + prem_i)
         rate_i = model.fuel_rate_lph(rpm_i, gondola)
         litres += rate_i * (nm / leg.speed_kt if leg.speed_kt > 0 else 0.0)
@@ -1021,7 +1113,8 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
          start_time: dt.datetime | None = None,
          waypoints: float | tuple[float, ...] | None = None,
          waypoint_unit: str = DEFAULT_WAYPOINT_UNIT,
-         home_marks_km: float | tuple[float, ...] | None = None) -> PlanResult:
+         home_marks_km: float | tuple[float, ...] | None = None,
+         env_at=None, max_run_nm: float = 1.0) -> PlanResult:
     """Run a full mission plan.
 
     Raises ValueError with all input problems collected, rather than failing on
@@ -1080,7 +1173,16 @@ def plan(legs: list[Leg], env: Environment, vessel: Vessel,
 
     gondola = vessel.gondola
     gond = model.gondolas[gondola]
-    results = [plan_leg(l, env, model, sea_override, gondola=gondola) for l in legs]
+    # Elapsed hours are accumulated as we go, so a leg's geometry can be
+    # located in TIME as well as in space: leg three of a two-day mission does
+    # not see the tide leg one saw. Without `env_at` this is exactly the old
+    # comprehension — every leg planned against the mission environment.
+    results, elapsed = [], 0.0
+    for l in legs:
+        r = plan_leg(l, env, model, sea_override, gondola=gondola,
+                     env_at=env_at, start_hours=elapsed, max_run_nm=max_run_nm)
+        results.append(r)
+        elapsed += r.hours
 
     # Lay the legs out on a mission timeline. Elapsed hours always; clock times
     # only when a start was given. cum_l[i] is the fuel burned BEFORE leg i,

@@ -1,6 +1,6 @@
 {
   "_about": "Derived coefficients for the DriX mission fuel planner. Every number here comes from DriX_fuel_efficiency_analysis.xlsx, which in turn derives from DriX_fuel_efficiency_raw_references.xlsx. Provenance is recorded per block. Values marked \"fitted\": true are regressions against measured data; values marked \"fitted\": false are assumptions and are editable in the UI.",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "generated": "2026-08-09",
   "fuel_vs_rpm": {
     "_doc": "Primary fuel model. L/h = f0 + f1 * RPM. Fitted over the 2024 speed trials, 1020-2500 rpm, flow-meter measured. This is the workbook's preferred model: RPM predicts fuel at least as well as speed does.",
@@ -265,5 +265,13 @@
     "c": 1.1269999742507935,
     "tank_capacity_l": 250.0,
     "min_tank_percentage": 20.0
+  },
+  "turn_model": {
+    "_doc": "How a survey turns between lines. ASSUMPTION, not a measurement — the same standing as sea_state_premium, and labelled as such wherever it reaches a surface. Turn time and fuel were absent entirely before 2026-08-13, which flattered every survey; a stated assumption beats a silent zero, but this is a dial to turn, not a fitted value. Where the line spacing is less than twice the radius a simple 180 does not fit and the vehicle runs out and back (the omega turn), which geometry.py models. MEASURABLE: the MCAP days carry position and INS heading, so a real rate of turn is extractable from a recorded line change.",
+    "fitted": false,
+    "radius_nm": 0.0135,
+    "radius_source": "Assumed ~25 m for a DriX-8 at survey speed. Not measured.",
+    "speed_kt": 0.0,
+    "speed_source": "0 means hold the survey speed through the turn."
   }
 }

@@ -33,6 +33,37 @@ change: every leg has its own sea state, wind and current on its Weather row.
 - **Current** is named for where it **sets toward**. The two conventions are
   opposite, as at sea. A current changes the fuel, never the clock.
 
+**Currents can come from the forecast.** Put a departure position and a start
+time on the Mission clock card and press **Currents from forecast**. It reads
+the NOAA Delaware Bay OFS surface forecast along each leg, at the time you would
+be there, and fills the current boxes. Things to know:
+
+- The start time is read in **your own time zone** and converted, so enter it as
+  the clock on the wall.
+- It reports the along-track component per leg.
+  **Plus is a fair tide, minus is foul.** Check that sign before you believe it.
+- A leg it cannot see is **left alone, not zeroed**. Empty means no data, which
+  is not the same as slack water.
+- Type over any of it you disagree with. Doing so drops the forecast label from
+  the mission report, because those numbers are then yours.
+- This is the only button here that needs a network. Everything else works with
+  no signal at all.
+
+**Geometry is optional, and it is what makes a turning tide real.** On the
+Mission geometry card you can import a line plan, type transit waypoints, or
+give a survey anchor, bearing and spacing. Then tick the box marked
+**Read currents along the track**, and the plan samples the forecast at every
+line and every segment instead of taking one current per leg.
+
+- Import reads CSV, GeoJSON, KML, KMZ, GPX and Hypack LNW.
+- Eastings and northings need a **UTM zone**, which is never guessed.
+  Delaware Bay is 18N.
+- Check the import summary against what you drew. A plan that loads into the
+  wrong place looks exactly like one that loaded correctly.
+- **Turns between survey lines now cost time and fuel.** They did not before,
+  so surveys read higher than they used to. The turn radius is an assumption
+  in the model, not a measurement.
+
 - A survey is **lines x line length** on a bearing, alternate lines reciprocal.
 - **Max survey for the reserve** fills in the line count that fuel allows. Fill
   in the line length first and leave the count blank if you like. You can type

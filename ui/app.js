@@ -87,10 +87,28 @@ async function boot() {
 
   $('planForm').addEventListener('submit', (e) => { e.preventDefault(); doPlan(); });
   $('maxBtn').addEventListener('click', doMaxSurvey);
+  $('currentsBtn').addEventListener('click', doCurrents);
+  $('planImportBtn').addEventListener('click', importLinePlan);
+  $('clearGeomBtn').addEventListener('click', clearGeometry);
+  ['patLat', 'patLon', 'patBearing', 'patSpacing', 'surLines', 'surRange']
+    .forEach((id) => $(id).addEventListener('input', refreshPattern));
+  ['originLat', 'originLon'].forEach((id) =>
+    $(id).addEventListener('input', refreshOrigin));
+  // Typing in a current box makes the forecast label a lie, so it is dropped
+  // the moment one is touched. The report must never name a cycle for numbers
+  // an operator overrode by hand.
+  LEG_PREFIXES.flatMap((p) => [p + 'CurKt', p + 'CurSet']).forEach((id) =>
+    $(id).addEventListener('input', () => {
+      if (!currentsSource) return;
+      currentsSource = '';
+      setCurrentsNote('Edited by hand — the forecast label has been dropped.');
+    }));
 
   onSeaChange();
   refreshDerived();
   refreshHolding();
+  refreshOrigin();
+  refreshPattern();
   drawRose();
 }
 
@@ -234,17 +252,24 @@ function buildBody() {
     legs: [
       { name: 'Transit out', kind: 'transit', distance_nm: Number($('outRange').value),
         speed_kt: Number($('outSpeed').value), course_deg: Number($('outCourse').value),
-        loiter_hours: loiterHours('out'), ...legWeather('out') },
+        loiter_hours: loiterHours('out'), ...legWeather('out'),
+        track: parseTrack($('outTrack').value) },
       { name: 'Survey', kind: 'survey',
         // distance is derived server-side from lines x line length
         distance_nm: 0,
         lines: Number($('surLines').value),
         line_length_nm: Number($('surRange').value),
         speed_kt: Number($('surSpeed').value), course_deg: Number($('surCourse').value),
-        loiter_hours: loiterHours('sur'), ...legWeather('sur') },
+        loiter_hours: loiterHours('sur'), ...legWeather('sur'),
+        // Imported lines WIN over a generated pattern: they are what the
+        // surveyor actually drew, and a pattern is only a way of describing
+        // lines when you have none.
+        survey_lines: importedLines,
+        pattern: importedLines ? null : surveyPattern() },
       { name: 'Transit home', kind: 'transit', distance_nm: Number($('homeRange').value),
         speed_kt: Number($('homeSpeed').value), course_deg: Number($('homeCourse').value),
-        loiter_hours: loiterHours('home'), ...legWeather('home') },
+        loiter_hours: loiterHours('home'), ...legWeather('home'),
+        track: homeTrack() },
     ],
     // Blank start time is sent as null: elapsed hours only, no clock.
     start_time: $('startTime').value || null,
@@ -258,7 +283,299 @@ function buildBody() {
       return v.length ? v : null;
     })(),
     waypoint_unit: $('waypointUnit').value,
+    // Names the forecast the current boxes were filled from, so the mission
+    // report records WHICH cycle rather than presenting a perishable input as
+    // a constant. Cleared the moment a current box is edited by hand.
+    currents_source: currentsSource,
+    // Sample the forecast along the geometry instead of using one current per
+    // leg. Ignored server-side unless a leg actually carries geometry.
+    use_forecast_currents: $('useField').checked,
+    departure_utc: departureUtc(),
   };
+}
+
+// -------------------------------------------------------------------- geometry
+// All optional. With none of it filled in, buildBody sends no track, no
+// pattern and no survey lines, and the planner works on distances and courses
+// exactly as it always did.
+//
+// Imported lines are held HERE rather than written into a textarea: a real
+// plan is hundreds of vertices, and round-tripping those through a text box
+// would lose precision and invite a half-edit that parses but is not what the
+// surveyor drew.
+let importedLines = null;
+let importedSummary = null;
+
+/** "38.78, -75.14" per line -> [[lat, lon], ...]; null when blank. */
+function parseTrack(text) {
+  const pts = [];
+  for (const raw of String(text || '').split(/[\n;]+/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const nums = line.split(/[,\s]+/).map(Number).filter((n) => !Number.isNaN(n));
+    if (nums.length >= 2) pts.push([nums[0], nums[1]]);
+  }
+  return pts.length >= 2 ? pts : null;
+}
+
+/** The homebound track: what was typed, or the outbound one reversed.
+ *
+ *  A blank box meaning "and back the way I came" saves typing the same points
+ *  twice, which is where a transposed digit gets in. Written as a function
+ *  rather than an expression inline in the request because the fallback has
+ *  three states — typed, derived, absent — and an `||` chain that reads
+ *  cleanly is not the same as one that evaluates correctly. */
+function homeTrack() {
+  const typed = parseTrack($('homeTrack').value);
+  if (typed) return typed;
+  const out = parseTrack($('outTrack').value);
+  return out ? out.slice().reverse() : null;
+}
+
+function surveyPattern() {
+  const lat = $('patLat').value;
+  const lon = $('patLon').value;
+  const spacing = Number($('patSpacing').value);
+  if (lat === '' || lon === '' || !(spacing > 0)) return null;
+  return {
+    anchor: [Number(lat), Number(lon)],
+    bearing_deg: Number($('patBearing').value) || Number($('surCourse').value) || 0,
+    // Count and length come from the survey leg, so there is exactly one
+    // place to change them and the two can never disagree.
+    lines: Number($('surLines').value),
+    length_nm: Number($('surRange').value),
+    spacing_nm: spacing,
+  };
+}
+
+function refreshPattern() {
+  const p = surveyPattern();
+  if (!p) {
+    $('patOut').textContent = importedLines
+      ? `${importedLines.length} imported lines in use`
+      : '—';
+    return;
+  }
+  const total = p.lines * p.length_nm;
+  $('patOut').textContent =
+    `${p.lines} lines × ${p.length_nm} NM on ${fmtDeg(p.bearing_deg)}, `
+    + `${p.spacing_nm} NM apart — ${total.toFixed(1)} NM of line`;
+}
+
+function fmtDeg(d) {
+  return `${String(Math.round(Number(d) || 0)).padStart(3, '0')}°T`;
+}
+
+function clearGeometry() {
+  importedLines = null;
+  importedSummary = null;
+  ['outTrack', 'homeTrack', 'patLat', 'patLon', 'patBearing', 'patSpacing']
+    .forEach((id) => { $(id).value = ''; });
+  $('useField').checked = false;
+  $('planOut').textContent = '';
+  $('planOut').className = 'note';
+  refreshPattern();
+}
+
+async function importLinePlan() {
+  const file = $('planFile').files && $('planFile').files[0];
+  if (!file) {
+    $('planOut').className = 'note warn';
+    $('planOut').textContent = 'Choose a file first.';
+    return;
+  }
+  const btn = $('planImportBtn');
+  btn.disabled = true;
+  $('planOut').className = 'note';
+  $('planOut').textContent = `Reading ${file.name}…`;
+  try {
+    const buf = await file.arrayBuffer();
+    // base64 in chunks: a big line plan overflows the argument list of a
+    // single String.fromCharCode(...) spread.
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 8192) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    }
+    const data = await post('/api/lineplan', {
+      filename: file.name,
+      data: btoa(bin),
+      utm_zone: $('planZone').value || null,
+      northern: $('planHemi').value === 'N',
+    });
+
+    const s = data.summary;
+    const target = $('planTarget').value;
+    if (target === 'survey') {
+      importedLines = data.lines;
+      importedSummary = s;
+      // The imported lines replace the generated pattern, so clear the
+      // pattern fields rather than leaving two sources of truth on screen.
+      ['patLat', 'patLon', 'patBearing', 'patSpacing'].forEach((id) => {
+        $(id).value = '';
+      });
+      $('surLines').value = s.lines;
+      if (s.mean_line_nm) $('surRange').value = s.mean_line_nm.toFixed(3);
+      // The FIRST line's heading, not an average of them. A lawnmower's
+      // bearings average to the direction it never steers — 020 and 200 mean
+      // 110 — and that number was going straight into the course box.
+      if (s.first_bearing_deg !== null) $('surCourse').value = Math.round(s.first_bearing_deg);
+    } else {
+      // A transit takes ONE polyline. More than one line in the file is
+      // almost certainly a survey plan pointed at the wrong target, so say so
+      // rather than silently flying the first of them.
+      if (data.lines.length > 1) {
+        $('planOut').className = 'note warn';
+        $('planOut').textContent =
+          `That file holds ${data.lines.length} lines — a transit takes one `
+          + `track. Import it as survey lines, or edit the file.`;
+        return;
+      }
+      $(target === 'out' ? 'outTrack' : 'homeTrack').value =
+        data.lines[0].map((p) => `${p[0].toFixed(6)}, ${p[1].toFixed(6)}`).join('\n');
+    }
+
+    const bits = [`${s.format}: ${s.lines} lines, ${s.points} points, `
+                  + `${s.total_nm.toFixed(1)} NM`];
+    if (s.line_axis_deg !== null) {
+      bits.push(`lines on the ${fmtDeg(s.line_axis_deg)}/`
+                + `${fmtDeg((s.line_axis_deg + 180) % 360)} axis`);
+    }
+    if (s.mean_gap_nm) bits.push(`mean gap ${s.mean_gap_nm.toFixed(3)} NM`);
+    bits.push(`first point ${fmtLat(s.first_point[0])} ${fmtLon(s.first_point[1])}`);
+    if (s.crs && s.crs !== 'WGS84 geographic') bits.push(s.crs);
+    (s.notes || []).forEach((n) => bits.push(n));
+    $('planOut').className = 'note';
+    $('planOut').textContent = bits.join(' · ');
+    refreshDerived();
+    refreshPattern();
+  } catch (err) {
+    importedLines = null;
+    $('planOut').className = 'note bad';
+    $('planOut').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ------------------------------------------------------------ forecast currents
+// The one thing in this app that reaches the network. It fills the per-leg
+// current boxes and nothing else: no coefficient moves, no plan is run, and an
+// operator can ignore the button entirely and type the tide in by hand.
+let currentsSource = '';
+
+/** The mission start as a UTC INSTANT.
+ *
+ *  `datetime-local` gives wall time with no zone, and the mission clock is
+ *  happy with that — but a tide is not. Sending "14:00" to a forecast indexed
+ *  in UTC would be four hours out in EDT, which at the mouth of Delaware Bay
+ *  is most of the way from slack to peak flood. The browser is the only party
+ *  that knows the operator's offset, so it converts here. */
+function departureUtc() {
+  const raw = $('startTime').value;
+  if (!raw) return null;
+  const d = new Date(raw);           // parsed as LOCAL time, by definition
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+// A position is SHOWN with its hemisphere — 075.1394 W, never -75.1394 E. The
+// boxes take signed degrees because that is what charts and the API use, so
+// this echo is where a mistyped sign becomes visible. Mirrors fmt_lat/fmt_lon
+// in currents.py; a test pins the two against each other.
+function fmtLat(lat) {
+  return `${Math.abs(lat).toFixed(4).padStart(7, '0')}° ${lat < 0 ? 'S' : 'N'}`;
+}
+
+function fmtLon(lon) {
+  return `${Math.abs(lon).toFixed(4).padStart(8, '0')}° ${lon < 0 ? 'W' : 'E'}`;
+}
+
+function refreshOrigin() {
+  const lat = $('originLat').value;
+  const lon = $('originLon').value;
+  $('originOut').textContent = (lat === '' || lon === '')
+    ? '—' : `${fmtLat(Number(lat))}   ${fmtLon(Number(lon))}`;
+}
+
+// 'warn' | 'bad' | 'busy'. Every kind is toggled on every call, so a state
+// cannot survive the note that replaces it — which is what clears the reading
+// flash on success, on failure and on a hand edit alike, without any of those
+// paths knowing the flash exists.
+function setCurrentsNote(text, kind) {
+  const out = $('currentsOut');
+  out.textContent = text;
+  out.classList.toggle('warn', kind === 'warn');
+  out.classList.toggle('bad', kind === 'bad');
+  out.classList.toggle('busy', kind === 'busy');
+  // The fetch is the one thing here that can hang on a network the boat may
+  // not have, so its start is announced to a screen reader rather than left to
+  // the flash. Assertive because it is replacing what the operator was reading.
+  out.setAttribute('aria-live', kind === 'busy' ? 'assertive' : 'polite');
+}
+
+async function doCurrents() {
+  const btn = $('currentsBtn');
+  const lat = $('originLat').value;
+  const lon = $('originLon').value;
+  if (lat === '' || lon === '') {
+    return setCurrentsNote('Give a departure latitude and longitude first.', 'warn');
+  }
+  const departure = departureUtc();
+  if (!departure) {
+    return setCurrentsNote('Set a mission start time first — a current is a '
+                           + 'time of day, not a place alone.', 'warn');
+  }
+
+  const body = buildBody();
+  btn.disabled = true;
+  setCurrentsNote('Reading the forecast…', 'busy');
+  try {
+    const data = await post('/api/currents', {
+      lat: Number(lat), lon: Number(lon), departure_utc: departure,
+      legs: body.legs.map((l) => ({
+        name: l.name, kind: l.kind, distance_nm: l.distance_nm,
+        speed_kt: l.speed_kt, course_deg: l.course_deg,
+        loiter_hours: l.loiter_hours, lines: l.lines,
+        line_length_nm: l.line_length_nm,
+      })),
+    });
+
+    // Fill only the legs the forecast could answer for. A leg it could not see
+    // keeps whatever was already in the box: overwriting it with zero would
+    // turn "no data" into "slack water", which is a different plan.
+    let filled = 0;
+    const missed = [];
+    data.legs.forEach((row, i) => {
+      const p = LEG_PREFIXES[i];
+      if (!p) return;
+      if (row.current_speed_kt === undefined) {
+        missed.push(row.name);
+        return;
+      }
+      $(p + 'CurKt').value = row.current_speed_kt;
+      $(p + 'CurSet').value = row.current_set_deg;
+      filled += 1;
+    });
+
+    currentsSource = filled ? data.source.label : '';
+    const along = data.legs
+      .filter((r) => r.along_kt !== undefined)
+      .map((r) => `${r.name.replace('Transit ', '')} ${r.along_kt > 0 ? '+' : ''}`
+                  + `${r.along_kt.toFixed(2)} kt`)
+      .join(' · ');
+    let note = `${data.source.label} — ${filled} of ${data.legs.length} legs filled`;
+    if (along) note += `. Along track: ${along}`;
+    if (missed.length) note += `. No data: ${missed.join(', ')}`;
+    setCurrentsNote(note, (data.warning || missed.length) ? 'warn' : '');
+    if (data.warning) setCurrentsNote(`${note}. ${data.warning}`, 'warn');
+    refreshDerived();
+  } catch (err) {
+    // Offline is the ordinary case at sea, not an exception worth hiding.
+    currentsSource = '';
+    setCurrentsNote(err.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function post(url, body) {

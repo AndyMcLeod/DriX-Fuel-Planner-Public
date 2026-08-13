@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 219 tests — must stay green
+python -m unittest discover -s tests      # 351 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -19,10 +19,24 @@ block is tagged `"fitted": true/false` so measurements are never confused with
 assumptions. Do not hardcode numbers in `engine.py` or the UI; do not change a
 coefficient without knowing which measurement or decision it traces to.
 
-## Where things stand (2026-08-12, model.json v2.6.0)
+## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **219 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **351 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
+
+**Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
+`track` (a polyline of waypoints) or a `pattern` (a survey lawnmower), and
+`plan(env_at=...)` samples the environment PER RUN — per survey line, per
+transit segment — at where and when the vehicle actually is. That is what
+makes a tide real to the planner instead of one averaged number per leg.
+**Both are optional and absent behaves exactly as before**, pinned by a test.
+`model.json` is **v2.7.0**: one new block, `turn_model`, `fitted: false`.
+
+**Before that: the per-leg currents can be read off the NOAA forecast** rather
+than typed from a tide table — `currents.py`, the `Currents from forecast`
+button, and `POST /api/currents`. **model.json did not move and neither did the
+engine**: it fills two fields that already existed. See its section below,
+particularly the part about what it does NOT fix.
 
 **What the planner does, in one paragraph.** Three legs, each carrying its OWN
 sea state, wind and current, plus an optional loiter hold. For every leg it
@@ -337,6 +351,287 @@ goes through `nudgeRoseLabels()` after the leg labels — leg names get first cl
 on their own bearing — and only leg labels get a leader, because a weather tag
 names its own legs. Verified by sweeping 2592 course-and-weather combinations:
 zero overlaps.
+
+## Mission geometry: tracklines and survey patterns (2026-08-13)
+
+Andy: *"we need to input a trackline for each transit and a survey line pattern
+for the survey itself... this will provide fixed time and position to overlay
+current data."* Right, and it dissolves the limit rather than patching it.
+
+**The problem it fixes.** A leg was a distance, a course and a speed, which
+cannot say where the vehicle is at 14:20 — so a time-varying field could only
+ever be applied as ONE number per leg. Measured on the real forecast at
+Delaware Bay Entrance, a survey held on one ground costs **+5.0% to +9.4%**
+more than its own vector mean; and worse than the litres, a 16 h survey's
+leg-mean current reads **0.16 kt**, which any operator reads as slack, while
+the water runs to 2.2 kt and reverses under them. The mean of a reversing tide
+is not the tide.
+
+**What was added.**
+
+- `geometry.py` — stdlib, pure. `Point`, rhumb `move`/`distance_nm`/
+  `course_deg`, `Run` (a straight piece that knows its endpoints and can
+  `split()` finer), `SurveyPattern` (anchor, bearing, length, spacing, count →
+  real lines, alternating, each starting where the last finished) and
+  `TurnModel`.
+- `Leg.track` and `Leg.pattern`, both OPTIONAL. Present, the leg's distance
+  and course are DERIVED from the geometry; absent, every number is what it
+  always was. `geometry_runs()` is the ONE seam that reads them.
+- `plan(env_at=...)` / `plan_leg(env_at=..., start_hours=...)`: the engine
+  calls `env_at(lat, lon, hours_from_mission_start)` per run. **It is
+  INJECTED, never fetched** — that is what keeps the engine pure computation
+  with no I/O, testable against a field made of arithmetic.
+- `currents.env_factory(base_env, departure)` supplies one backed by the cache.
+
+**Runs are split to 1 NM by default** (`max_run_nm`) — 7.5 minutes at 8 kt,
+finer than the forecast's hourly ~500 m resolution and no finer than the source
+supports. Splitting never changes the distance flown; a test pins it.
+
+**The field may decline to answer.** Past the end of the forecast, or over a
+shoal the model calls land, `env_at` returns None and the engine falls back to
+the leg's own current — a plan completes on the operator's typed number rather
+than failing or silently planning slack water. `env_at.covered / .asked` say
+how much of the mission it actually answered for.
+
+**Turns are modelled now, and they are an ASSUMPTION.** `model.json`
+`turn_model` (`fitted: false`, radius 0.0135 NM ≈ 25 m). Where spacing ≥ 2r a
+half-circle fits; tighter than that the vehicle runs out and back — the omega
+turn — and `TurnModel.path_nm` charges the longer path. **This makes surveys
+cost more than they used to**, because turn time and fuel were absent
+altogether before. That is a correction, not a regression, and it is
+measurable: the MCAP days carry position and INS heading, so a real rate of
+turn is extractable from a recorded line change. On the known-gaps list.
+
+**A turn's distance travelled and distance made good are different things**,
+and fuel follows the former. The turn Run carries the arc length while
+displacing the vehicle only from one line's end to the next line's start.
+
+**What bit here.** Two of my tests over-specified and one guard was thin:
+`turn_angle(0, 180)` is ±180 and the SIGN at an exact reversal is arbitrary, so
+only the magnitude can be asserted; the lawnmower spacing identity holds to
+about 0.2 m rather than machine precision, because rhumb steps composed in
+different orders differ under the flat-earth approximation; and `Run.split`
+needed an epsilon, since a 20 NM run comes back as 20.000000000000004 and
+`ceil` then asked for 21 pieces, the last a few microns long.
+
+### The importer, and why THAT is the scope (2026-08-13)
+
+`lineplan.py` reads CSV/TXT, GeoJSON, KML, KMZ, GPX and Hypack LNW. The scope
+was chosen on one test — **can the file be read without guessing?** A parser
+that half-works is worse than none, because a plan that loads cleanly a mile
+off looks exactly like one that loaded correctly.
+
+Refused deliberately, each with a reason rather than a shrug: **shapefile**
+(geometry is trivial, but the CRS is WKT in a sidecar `.prj` and guessing a
+datum from partial WKT is the whole failure class), **UKOOA P1/90 and SEG-P1**
+(fixed-column, where a one-character offset still parses into plausible
+positions — needs a real sample to pin against), and **QINSy / NaviPac / PDS
+databases** (proprietary containers; all of them export to something on the
+list). If Andy supplies a sample of any of these, adding it is small.
+
+**The CRS is what actually bites, not the format.** Geographic degrees are read
+as they come, decimal or DMS, and a HEMISPHERE LETTER BEATS A SIGN — `-75.5 W`
+is west, because someone writing both means west twice and a double negative
+would put it in China. Projected coordinates are UTM/WGS84 only and only with
+the zone given; the zone is NEVER guessed. WGS84 is assumed (NAD83 differs by
+1–2 m here, two orders under the forecast mesh).
+
+**What the live run caught, and it is a good one.** The import summary reported
+`mean bearing 110°T` for a survey running 020/200 — the arithmetic mean of
+alternating reciprocals is the one direction the vessel never steers, square
+across the lines — and it was being written straight into the survey course
+box. `describe()` now reports the **line AXIS** (circular mean of the doubled
+angles, halved, 0–180) plus the first line's actual heading, and the UI takes
+the first bearing. Two things had to go wrong together for it to be invisible:
+a plausible number, and no picture to check it against.
+
+Also from that run: `csv.Sniffer` gives up on short files and the fallback
+split each row on whitespace into ONE token, so every row was skipped for
+having no numbers and the file reported as holding no coordinates; and the
+header matcher did not recognise `lat1`/`lon1`/`lat2`/`lon2`, which is exactly
+how endpoint-per-row files are written, so they fell through to the positional
+path and became one-point lines.
+
+### The geometry UI (2026-08-13)
+
+A **Mission geometry** card, all of it optional: import a line plan, type
+transit waypoints (lat, lon per line, monospaced so a transposed digit shows),
+or give a survey anchor/bearing/spacing. Line count and length come from the
+survey leg, so there is ONE place to change them.
+
+**Imported lines beat a generated pattern** — they are what the surveyor drew.
+They are held in a JS variable, never round-tripped through a textarea: a real
+plan is hundreds of vertices and a half-edit that parses is not what was drawn.
+Importing to a transit REFUSES a multi-line file rather than flying the first
+of them.
+
+**"Read currents along the track"** sends `use_forecast_currents`, and
+`/api/plan` builds the field via `env_factory` when the legs carry geometry.
+The response carries `currents_field` with `asked`/`covered` so a surface can
+say how much of the mission the forecast answered for. Verified live from the
+browser: a 12-line KML imported, 41 runs, 41 covered, 28.19 L against the field
+against 27.65 L without.
+
+## Currents from the NOAA forecast (2026-08-13)
+
+Andy asked for surface currents off the OFS map-plot animation, then for them
+wired into the planner. `currents.py` (repo root, **stdlib only**, so the app
+takes no new dependency) reads them; the button on the Mission clock card fills
+the per-leg boxes; `POST /api/currents` is the seam.
+
+**The model did not change and neither did the engine.** This supplies two
+inputs that have existed since 2026-08-11. That is the whole design: no new
+coefficient, no new physics, nothing in `model.json`, and the planner behaves
+exactly as before for anyone who never presses the button.
+
+### What it reads, and the one decision that mattered
+
+The page Andy pointed at draws **rendered PNGs**, one per hour — there are no
+numbers in them. The model output behind them is served over OPeNDAP, and NOAA
+publishes each OFS twice:
+
+- **`fields`** — the native ROMS output. Curvilinear grid, velocities in GRID
+  axes on staggered u/v points. Using it means averaging u and v onto rho
+  points and rotating every cell by `angle` before a bearing means anything.
+- **`regulargrid`** — NOAA's own regrid. Rectilinear 0.005° mesh,
+  `u_eastward`/`v_northward` already true-referenced, land mask included.
+
+**This reads `regulargrid`**, because the two operations the native product
+needs are exactly the two that fail silently: get the rotation wrong and every
+set is out by tens of degrees while every speed still looks reasonable.
+`python currents.py crosscheck` does the native path BY HAND and compares —
+**median 0.07 kt and 1.0° apart** — so the shortcut is evidence, not assumption.
+Keep that subcommand. It is the only thing standing behind the choice.
+
+Domain 37.79–40.22 N, 75.89–73.25 W; six nowcast hours plus 48 forecast, so a
+**54-hour span**; ~2 MB per hour over the wire, 33 MB gzipped for the whole box,
+about half a minute to fetch. Cache in `ofs_cache/` (gitignored).
+
+### How it was verified — three independent ways, because direction fails quietly
+
+1. **Native ROMS crosscheck**, above.
+2. **NOAA's own picture.** `tools/dbofs_plotcheck.py` redraws the extracted
+   field onto the published PNG in NOAA's colour bins. It **derives the
+   georeference from the plot's own graticule** — finding the dotted lines by
+   their neutral grey, since the arrows are saturated — and refuses to draw if
+   the fit residual exceeds 2 px or the derived box does not contain the model
+   domain. The plot frame is NOT the model box: it is padded, 37.60–40.22 N,
+   76.02–72.98 W.
+3. **CO-OPS harmonic predictions** at DEB0002, a wholly separate product:
+   **correlation +0.987 over 54 h, RMS 0.30 kt**, peak 2.25 kt against 2.28,
+   slack water within half an hour. `python currents.py station` re-runs it.
+   They will never match exactly — harmonics are astronomical tide only, the
+   station bin is feet down, and the prediction is rectilinear where the model
+   carries a vector. That is the point of reading a model.
+
+### What bit, and would bite again
+
+- **A mirrored latitude axis fits a straight line perfectly.** Pairing ascending
+  pixel rows with ascending latitudes gave sub-pixel residuals AND passed the
+  aspect-ratio check, with the whole map upside down. Only an explicit sign
+  assertion catches it, and that assertion is now in `georeference()`. Do not
+  "simplify" it away.
+- **`cache=CACHE` as a default argument binds at import.** A test that pointed
+  the cache at a temp directory silently read the operator's real 33 MB cycle
+  instead — it passed for the wrong reason and ran three times slower. Every
+  cache argument now resolves `cache or CACHE` inside the call.
+- **A uniform test field cannot catch a bank-averaging bug.** The land-mask test
+  passed against a mutant that averaged land straight into the channel, because
+  every node held the same value. Land now carries a different value from water
+  in that fixture, and the test asserts the number a broken version would give.
+- **`datetime-local` is wall time with no zone.** Sending it raw to a forecast
+  indexed in UTC is four hours out in EDT — most of the way from slack to peak
+  flood at the mouth of the bay. **The browser converts** (`toISOString()`),
+  because only it knows the operator's offset. Verified live against a machine
+  in `America/New_York`: local 14:00 went out as 18:00Z.
+
+Eight mutations were run against the guards, all caught, source verified
+unchanged afterwards.
+
+### Positions are displayed with a hemisphere (Andy, 2026-08-13)
+
+`075.1394 W`, never `-75.1394 E`. A signed number under an "E" heading reads as
+east to anyone scanning it, with the minus the only thing saying otherwise —
+and this whole domain is west. `fmt_lat` / `fmt_lon` / `fmt_span` in
+`currents.py` are the one implementation; longitude is padded to three degrees
+the way charts write it, which also tells the two apart at a glance. A span
+carries a hemisphere on EACH end so a box straddling the meridian cannot read
+as one signed range.
+
+**Only the display changed.** The input boxes, the JSON API, the CSV exports
+and the cache metadata are all still **signed decimal degrees** — that is what
+every consumer parses, and a test asserts it stays that way. The UI echoes the
+typed position back formatted, which is where a dropped minus becomes visible:
+`-75.1394` reads `075.1394 W`, and `75.1394` reads `075.1394 E`, the wrong
+ocean. `app.js` has a second implementation of the same convention (it cannot
+import Python), and a test pins the two together on the padding widths, which
+is the part that would silently drift.
+
+### The rules it follows
+
+- **Missing is never zero.** A leg the forecast cannot see is left EMPTY — in
+  the response, in the UI box, everywhere. No data and slack water are different
+  answers and only one of them belongs in a plan. Three tests and a mutation
+  pin this.
+- **A survey does not walk down its first line.** A lawnmower ends roughly where
+  it began, so a survey leg holds position and only advances the clock. Walking
+  it `lines × line_length` down `course_deg` would put the run home tens of
+  miles into the wrong water. Mutation-checked.
+- **The loiter is taken at the start**, matching the engine, so a hold changes
+  which way the tide is running for everything after it.
+- **The forecast is perishable, so the report names the cycle.** And the label
+  is dropped the instant a current box is edited by hand — the report must never
+  attribute an operator's own number to a NOAA run.
+- **Offline stays first-class.** This is the ONLY endpoint that reaches the
+  network. A failure is a message an operator can act on, never a hang, and
+  every box it fills can be typed by hand.
+
+### The reading state is loud (Andy, 2026-08-13)
+
+"More visual indication of reading current forecast. maybe bold and flashing
+red." So `setCurrentsNote` gained a third kind, `busy`, and the note goes **bold
+700 and blinks in `var(--bad)`** while the fetch is in flight — the only
+animated thing in the app, for the only state where an operator waits on a
+network the boat may not have.
+
+- **It borrows the FAILURE colour, and the blink is what tells them apart.** A
+  red note sitting still has failed; one that pulses is still working. Flagged
+  to Andy as the cost of "red" — amber or the accent would have kept red meaning
+  "this didn't work" — and he took it. The weight goes past `.bad`'s 600 for the
+  same separation.
+- **`busy` is TOGGLED like `warn` and `bad`, never added.** Every exit path
+  calls `setCurrentsNote` again — success, partial, failure, hand edit — so the
+  flash is cleared by the note that replaces it and no path has to know it
+  exists. A one-way `add` would leave a flashing red note on a finished read;
+  that is a test and a mutation.
+- **~0.9 Hz, and there is a test that keeps it there.** Past 3 Hz a flash is a
+  seizure risk for photosensitive readers (WCAG 2.3.1), and the obvious way to
+  make a warning feel more urgent is to speed it up. `test_the_flash_stays_under_
+  three_a_second` parses the period out of the CSS and fails under a third of a
+  second. **If it reads too sleepy, raise the contrast between the two phases,
+  not the rate.**
+- **`prefers-reduced-motion` drops the pulse and keeps the bold red**, and the
+  note carries `aria-live="assertive"` while busy so the state reaches a reader
+  who cannot see a colour change at all.
+
+**Verifying it needed the animation's own clock.** The Browser pane cannot
+composite while hidden, so a live sample of the computed opacity reads a frozen
+`1` forever and the flash looks broken when it is fine — `document.visibilityState`
+is `hidden` and Chrome has paused the animation. Setting `currentTime` by hand
+through `getAnimations()[0]` proved the square wave (opacity 1 for 550 ms, 0.3
+for 550 ms) without needing a visible tab. The still frame was taken by pointing
+headless Chrome at a scratch page that loads THIS server's `styles.css`, with
+each sample carrying `id="currentsOut"` — the rules are id-scoped, so a preview
+using any other id renders unstyled and proves nothing.
+
+### What it does NOT fix
+
+The speed law is still SOG-fitted in an unrecorded tide, and the ±6.91% heading
+premium still mixes wind, sea and current. **A real forecast current is still
+partly counted twice** — the leg note continues to say so. Reading the tide off
+DBOFS makes the input better; it does not make the correction clean, and it is
+not a substitute for the reciprocal-heading pairs that would strip the tide out
+of the fit itself (see "Known gaps").
 
 ## Current: set and drift (2026-08-11)
 
@@ -981,6 +1276,16 @@ Two traps this caught on 2026-08-09:
    and quotes spare against `binding_margin_*`; `max_survey_length` solves to
    the same floor. If you add a surface, read those fields — recomputing a
    verdict locally is how the UI and the API drift apart.
+7. **The forecast currents are checked against two things that are not them.**
+   `python currents.py crosscheck` rebuilds the vectors from the native ROMS
+   grid by hand (staggered averaging plus the `angle` rotation) and
+   `python currents.py station` compares against CO-OPS harmonic predictions.
+   `python currents.py verify` runs eleven cheap rails, including that the
+   binary DAP2 path agrees with NOAA's ASCII rendering. None of these run in
+   the unit suite — they need the network, and the suite must not. Run them
+   after touching anything in `currents.py`, and read
+   `tools/dbofs_plotcheck.py` before trusting a georeferenced overlay: it
+   refuses to draw rather than drawing arrows in the wrong place.
 
 ## Document builders
 
@@ -1271,8 +1576,20 @@ re-extracts from bags.
 - No cruise data below 1400 rpm (~5.3 kt) — a few steady runs at 1100–1400 rpm
   close it.
 - Speed law is SOG-based — reciprocal-heading pairs would strip the tide out.
+  **Now partly answerable without new trials:** the MCAP days carry position,
+  COG/SOG and INS heading, and `currents.py` can say what DBOFS thought the
+  tide was doing at that place and hour. Differencing the two over the fitted
+  runs would give the tide the law absorbed, which is the double-count the
+  current model has to apologise for. Not attempted yet; it needs the bag days
+  to fall inside a retrievable OFS cycle, and NOAA's archive does not go back
+  indefinitely.
 - The shaft-RPM sensor was faulted through all four MCAP days (reads 0/garbage);
   the PLC `thruster_rpm` channel is the working one.
+- **Turn rate is assumed, not measured.** `model.json` `turn_model` puts the
+  radius at ~25 m on no evidence at all. The MCAP days carry position and INS
+  heading through real line changes, so a rate of turn is extractable from a
+  recorded survey — this is the one new assumption the project has ADDED
+  rather than closed, and the cheapest outstanding measurement to settle.
 - Sea state → RPM premium: the CALM ANCHOR is now measured (Aug 2026 MCAP
   motion analysis: no premium above ±2% at heave-std 0.03–0.13 m) but the slope
   into rough water is not — a fixed-RPM leg in a genuine seaway is still the

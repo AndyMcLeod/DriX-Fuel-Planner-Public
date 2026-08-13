@@ -94,6 +94,127 @@
           <span>Back alongside</span>
           <output class="readout" id="finishOut">&mdash;</output>
         </div>
+        <!-- Departure position and the forecast button. These live on the
+             mission clock card because a current is answered by WHERE and
+             WHEN together: the same berth two hours later is a different
+             tide. Both boxes are optional and the planner is unchanged
+             without them. -->
+        <!-- Signed decimal degrees, because that is what the wire and every
+             chart export use — but the readout below echoes the position back
+             with its hemisphere, so a mistyped sign is visible rather than
+             merely present. -->
+        <label class="field">
+          <span>Departure lat <em>+N / &minus;S</em></span>
+          <input type="number" id="originLat" step="0.0001" min="-90" max="90"
+                 placeholder="38.7828">
+        </label>
+        <label class="field">
+          <span>Departure lon <em>+E / &minus;W</em></span>
+          <input type="number" id="originLon" step="0.0001" min="-180" max="180"
+                 placeholder="-75.1394">
+        </label>
+        <div class="field span2">
+          <span>Departure position</span>
+          <output class="readout" id="originOut">&mdash;</output>
+        </div>
+        <div class="field span2">
+          <button type="button" id="currentsBtn">Currents from forecast</button>
+          <p class="note" id="currentsOut"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- GEOMETRY. Optional throughout: with none of this filled in the
+         planner behaves exactly as it always has, on distances and courses.
+         Filled in, each leg knows where it is at every moment, which is what
+         lets a turning tide be read along the track instead of averaged into
+         one number. -->
+    <section class="card">
+      <h2>Mission geometry <span class="soft">optional</span></h2>
+
+      <div class="field span2">
+        <span>Import a line plan</span>
+        <div class="row">
+          <input type="file" id="planFile"
+                 accept=".csv,.txt,.json,.geojson,.kml,.kmz,.gpx,.lnw">
+          <select id="planTarget" aria-label="Where the imported lines go">
+            <option value="survey" selected>as survey lines</option>
+            <option value="out">as the outbound track</option>
+            <option value="home">as the homebound track</option>
+          </select>
+        </div>
+        <div class="row">
+          <label class="inline"><span>UTM zone</span>
+            <input type="number" id="planZone" min="1" max="60" step="1"
+                   placeholder="18" style="width:5rem">
+          </label>
+          <label class="inline"><span>Hemisphere</span>
+            <select id="planHemi" style="width:7rem">
+              <option value="N" selected>North</option>
+              <option value="S">South</option>
+            </select>
+          </label>
+          <button type="button" id="planImportBtn">Import</button>
+        </div>
+        <p class="note" id="planOut"></p>
+      </div>
+
+      <div class="grid2">
+        <label class="field span2">
+          <span>Outbound track <em>lat, lon per line</em></span>
+          <textarea id="outTrack" rows="3" spellcheck="false"
+                    placeholder="38.7828, -75.1394&#10;38.72, -74.95"></textarea>
+        </label>
+        <label class="field span2">
+          <span>Homebound track <em>lat, lon per line</em></span>
+          <textarea id="homeTrack" rows="3" spellcheck="false"
+                    placeholder="leave blank to reverse the outbound track"></textarea>
+        </label>
+      </div>
+
+      <h3>Survey pattern</h3>
+      <div class="grid2">
+        <label class="field">
+          <span>Anchor lat <em>+N / &minus;S</em></span>
+          <input type="number" id="patLat" step="0.0001" min="-90" max="90"
+                 placeholder="38.8536">
+        </label>
+        <label class="field">
+          <span>Anchor lon <em>+E / &minus;W</em></span>
+          <input type="number" id="patLon" step="0.0001" min="-180" max="180"
+                 placeholder="-75.0770">
+        </label>
+        <label class="field">
+          <span>Line bearing <em>&deg;T</em></span>
+          <input type="number" id="patBearing" step="1" min="0" max="360"
+                 placeholder="20">
+        </label>
+        <label class="field">
+          <span>Line spacing <em>NM</em></span>
+          <input type="number" id="patSpacing" step="0.01" min="0.001"
+                 placeholder="0.1">
+        </label>
+        <div class="field span2">
+          <span>Pattern</span>
+          <output class="readout" id="patOut">&mdash;</output>
+        </div>
+      </div>
+      <!-- Sits outside the grid so its class list stays exactly the two the
+           public export matches on. An extra class here (span2) left the note
+           in the shipped file; the export's own guard then caught the word
+           surviving, which is also why this comment does not spell it. -->
+      <div>
+      </div>
+
+      <div class="field span2">
+        <label class="inline">
+          <input type="checkbox" id="useField">
+          <span>Read currents along the track when planning</span>
+        </label>
+      </div>
+
+      <div class="field span2">
+        <button type="button" id="clearGeomBtn">Clear all geometry</button>
       </div>
     </section>
 

@@ -197,6 +197,132 @@ tidal model.
 A following current can drop the required RPM below the fuel law's fitted floor,
 and the ordinary extrapolation flag fires on it.
 
+## Mission geometry
+
+A leg can carry real geometry instead of a bare distance and course, and then
+the environment is sampled where and when the vehicle actually is:
+
+- **`track`** — a polyline of `[lat, lon]` for a transit.
+- **`pattern`** — a survey lawnmower: `anchor`, `bearing_deg`, `length_nm`,
+  `spacing_nm`, `lines`, and optionally `step_bearing_deg` / `turn_radius_nm`.
+
+Both are optional, and a leg without them plans exactly as it always did.
+Given either, `distance_nm` and `course_deg` are derived from the geometry, and
+`plan(env_at=...)` calls back per run — per survey line, per transit segment —
+with the position and the hours elapsed. `currents.env_factory()` supplies a
+callback backed by the forecast cache.
+
+**Why it matters.** A current that turns cannot be represented by one number
+per leg. At Delaware Bay Entrance a survey held on one ground costs **5–9%**
+more than its own vector mean, and a 16 h survey averages to **0.16 kt** —
+which reads as slack — while the water runs to 2.2 kt and reverses under it.
+
+**Turns between lines are modelled**, from `model.json`'s `turn_model` block,
+which is an **assumption** (`fitted: false`), not a measurement — the same
+standing as the sea-state premium. Where line spacing is less than twice the
+turn radius a simple 180° will not fit and the vehicle runs out and back, which
+is charged accordingly. Surveys therefore cost more than they did before this,
+because turn time and fuel were previously absent altogether.
+
+### Importing a line plan
+
+The **Mission geometry** card takes a file and fills the geometry from it:
+
+| Format | Notes |
+|---|---|
+| CSV / TXT | endpoint-per-row (`lat1,lon1,lat2,lon2`) or point-per-row grouped by line name; columns from the header, positional as a fallback |
+| GeoJSON | `LineString`, `MultiLineString`, and Features of either |
+| KML / KMZ | `LineString` placemarks; KMZ unzipped in memory |
+| GPX | routes and tracks |
+| Hypack LNW | the plain-text `LIN`/`PNT` line file |
+
+Deliberately **not** accepted, each for a reason rather than for want of time:
+**shapefile** (geometry is easy, but the CRS lives in a sidecar `.prj` as WKT
+and guessing a datum from partial WKT is the silent-failure class this avoids),
+**UKOOA P1/90 and SEG-P1** (fixed-column formats where a one-character offset
+still parses and yields plausible positions — these need a real sample to pin
+against), and **QINSy / NaviPac / PDS native databases** (proprietary
+containers, not interchange formats; all of them export to something above).
+
+**Coordinates are where this bites.** Geographic degrees are read as they come,
+decimal or degrees-minutes-seconds, and a hemisphere letter beats a sign — so
+`-75.5 W` is west, not east. Projected coordinates are accepted for **UTM on
+WGS84 only, and only when you give the zone**; a zone is never guessed, because
+the wrong one puts the survey hundreds of miles away with nothing on screen to
+show for it. WGS84 is assumed; NAD83 differs by 1–2 m here, two orders of
+magnitude under the forecast's 500 m mesh.
+
+The import reports what it read — line count, total distance, the **line
+axis**, mean gap, and the first point with its hemisphere — so you can check it
+against what you drew before planning against it.
+
+## Currents from the NOAA forecast
+
+Those two numbers per leg can be read off the operational forecast instead of a
+tide table. Put a departure position and start time on the Mission clock card
+and press **Currents from forecast**: the mission is dead-reckoned leg by leg,
+the forecast sampled along each track at the time the vehicle would be there,
+and the current boxes filled.
+
+This is the one thing in the planner that reaches the network, so while it is
+reading, the note under the button goes **bold red and blinks** — a state that
+clears itself whatever the read returns. A red note that has stopped blinking is
+a failed read, not a running one.
+
+`currents.py` is the module behind it — standard library, no new dependency —
+and it is a usable tool on its own:
+
+```bash
+python currents.py cycles                              # what NOAA is serving
+python currents.py fetch                               # cache the latest cycle
+python currents.py point --at 38.7828,-75.1394         # a position, hour by hour
+python currents.py frame --time 2026-08-13T14:00Z --csv frame.csv
+python currents.py verify                              # the rails
+```
+
+**What it reads.** NOAA's Delaware Bay OFS (`DBOFS`) `regulargrid` product over
+OPeNDAP: hourly surface velocity on a 0.005° mesh covering 37.79–40.22 N,
+75.89–73.25 W, six nowcast hours plus a 48-hour forecast. The published map-plot
+animation is drawn from the same model run — those are rendered PNGs, so this
+reads the numbers behind them rather than the pictures. `--ofs` points it at
+another region.
+
+**Why the `regulargrid` product.** The native ROMS `fields` carry velocity in
+GRID axes on staggered u/v points, needing per-cell rotation by `angle` before a
+bearing means anything; `regulargrid` ships `u_eastward`/`v_northward` already
+true-referenced. `python currents.py crosscheck` does the native path by hand
+and compares — median 0.07 kt and 1.0° apart, so the shortcut is evidence
+rather than assumption.
+
+**How it was checked.** Against the native grid as above; against NOAA's own
+published plot, redrawn by `tools/dbofs_plotcheck.py` after proving the
+georeference off the plot's graticule; and against CO-OPS harmonic current
+predictions at Delaware Bay Entrance — **correlation +0.987 over 54 hours, RMS
+0.30 kt, peak 2.25 kt against the model's 2.28, slack water within half an
+hour**. `python currents.py station` re-runs that comparison.
+
+**Positions are displayed with their hemisphere** — `075.1394 W`, not
+`-75.1394 E` — in the CLI, the overlay tool and the UI's departure readout,
+with longitude padded to three degrees as charts write it. The boxes, the JSON
+API, the CSV exports and the cache metadata all stay **signed decimal degrees**,
+because that is what every consumer of them parses; the readout is where a
+dropped minus becomes visible instead of merely present.
+
+**Limits worth knowing before trusting a number.**
+
+- It is a **forecast**, and a perishable one: cycles run four times a day. The
+  mission report records which cycle filled the boxes, and the label is dropped
+  the moment a current is typed over by hand.
+- It is the **surface** layer. The gondola sits below it and the shear is real
+  in a stratified estuary; 22 standard depths are available in the source if
+  sampling at draft is ever wanted.
+- A leg the forecast cannot see — outside the domain, or over land — is left
+  **empty, never zero**. No data and slack water are different answers.
+- The double-count above still applies. Real currents do not fix a speed law
+  fitted in an unrecorded tide.
+- This is **the only part of the planner that touches the network.** Everything
+  else works offline, and these boxes can always be typed by hand.
+
 ## Loiter — delays you can plan around
 
 Things happen at sea. Every leg takes a **`loiter_hours`**: time held on station
@@ -458,6 +584,12 @@ firmware that adds topics fails the run rather than shipping blank rows.
 | `POST /api/plan` | `{environment, vessel, legs, start_time?, waypoints?, waypoint_unit?}` | full plan |
 | | a leg also takes `loiter_hours` | |
 | `POST /api/max-survey` | same | longest survey holding the reserve |
+| `POST /api/currents` | `{lat, lon, departure_utc, legs, offline?}` | per-leg set and drift, plus the cycle it came from |
+
+`departure_utc` is a **UTC instant** (`2026-08-13T18:00:00Z`), unlike `start_time`
+above, which is the mission clock's local wall time. The UI converts; a caller
+must too. `/api/currents` is the only route that reaches the network, and
+`offline: true` makes it refuse rather than try.
 
 ```bash
 curl -s localhost:8765/api/plan -H 'Content-Type: application/json' -d '{

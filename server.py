@@ -15,6 +15,15 @@ Endpoints
     GET  /api/model         model.json, for populating defaults in the UI
     POST /api/plan          {environment, vessel, legs} -> full plan
     POST /api/max-survey    same body -> longest survey that holds the reserve
+    POST /api/currents      {lat, lon, departure_utc, legs} -> per-leg set/drift
+                            read off the NOAA OFS surface forecast
+
+/api/currents IS THE ONE ENDPOINT THAT REACHES THE NETWORK. Everything else
+here works on a boat with no signal, and that stays true: the currents call is
+made only when an operator presses the button, a failure is reported as a
+failure, and the per-leg fields it fills can always be typed by hand instead.
+Times in that request are UTC INSTANTS, not the mission clock's local wall time
+— the browser converts, because only it knows the operator's offset.
 
 EVERY SUCCESSFUL PLAN WRITES A MARKDOWN REPORT to `docs/missions/`, and the
 response carries its path. That is a side effect of a GET-shaped operation, so
@@ -36,6 +45,8 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import currents as ofs
+import lineplan
 import mission_report
 from engine import (DEFAULT_WAYPOINT_UNIT, Environment, Leg, Model, Vessel,
                     default_waypoints, load_model,
@@ -129,6 +140,100 @@ def _parse_waypoints(raw, unit: str) -> tuple[float, ...]:
     return tuple(float(x) for x in raw)
 
 
+MAX_TRACK_POINTS = 2000
+MAX_SURVEY_LINES = 2000
+
+
+def _parse_track(raw):
+    """[[lat, lon], ...] for a transit, or None.
+
+    Bounded, because each point becomes runs and each run becomes a field
+    lookup: an unbounded track is an unbounded amount of work for one request
+    on a loopback server with no auth in front of it.
+    """
+    if raw in (None, ''):
+        return None
+    if not isinstance(raw, list):
+        raise ValueError('track must be a list of [lat, lon] pairs')
+    if len(raw) > MAX_TRACK_POINTS:
+        raise ValueError(f'track has more than {MAX_TRACK_POINTS} points')
+    out = []
+    for p in raw:
+        if not isinstance(p, (list, tuple)) or len(p) != 2:
+            raise ValueError('each track point must be [lat, lon]')
+        lat, lon = float(p[0]), float(p[1])
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            raise ValueError(f'track point {lat}, {lon} is not on the earth')
+        out.append([lat, lon])
+    if len(out) < 2:
+        raise ValueError('a track needs at least two points')
+    return out
+
+
+def _parse_survey_lines(raw):
+    """Explicit survey lines as imported from a line plan: [[[lat, lon], ...], ...]
+
+    Bounded on both axes — a plan with thousands of lines, or one line with
+    thousands of vertices, is the same unbounded work as an unbounded track.
+    """
+    if raw in (None, ''):
+        return None
+    if not isinstance(raw, list):
+        raise ValueError('survey_lines must be a list of lines')
+    if len(raw) > MAX_SURVEY_LINES:
+        raise ValueError(f'more than {MAX_SURVEY_LINES} survey lines')
+    out = []
+    for line in raw:
+        pts = _parse_track(line)          # same point rules, same bounds
+        out.append(pts)
+    if not out:
+        return None
+    return out
+
+
+def _parse_pattern(raw):
+    """A survey lawnmower, or None.
+
+    The TURN RADIUS defaults from `model.json`, not from a literal here: it is
+    an assumption with a documented standing, and a second copy in this file
+    would be free to drift from the one the documents describe.
+    """
+    if raw in (None, ''):
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError('pattern must be an object')
+    anchor = raw.get('anchor')
+    if not isinstance(anchor, (list, tuple)) or len(anchor) != 2:
+        raise ValueError('pattern needs an anchor of [lat, lon]')
+    lat, lon = float(anchor[0]), float(anchor[1])
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        raise ValueError(f'pattern anchor {lat}, {lon} is not on the earth')
+    lines = int(float(raw.get('lines', 0)))
+    if lines < 1 or lines > MAX_SURVEY_LINES:
+        raise ValueError(f'pattern needs 1 to {MAX_SURVEY_LINES} lines')
+    length = float(raw.get('length_nm', 0.0))
+    spacing = float(raw.get('spacing_nm', 0.0))
+    if length <= 0:
+        raise ValueError('pattern line length must be greater than zero')
+    if spacing <= 0:
+        raise ValueError('pattern line spacing must be greater than zero')
+    turn = get_model().data.get('turn_model', {})
+    radius = raw.get('turn_radius_nm')
+    return {
+        'anchor': [lat, lon],
+        'bearing_deg': float(raw.get('bearing_deg', 0.0)),
+        'length_nm': length,
+        'spacing_nm': spacing,
+        'lines': lines,
+        'step_bearing_deg': (None if raw.get('step_bearing_deg') in (None, '')
+                             else float(raw['step_bearing_deg'])),
+        'turn_radius_nm': (float(turn.get('radius_nm', 0.0))
+                           if radius in (None, '') else float(radius)),
+        'turn_speed_kt': float(raw.get('turn_speed_kt',
+                                       turn.get('speed_kt', 0.0)) or 0.0),
+    }
+
+
 def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
                                         dict | None, dt.datetime | None,
                                         tuple[float, ...], str]:
@@ -172,6 +277,12 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
         # Coercing a missing value to 0.0 here would silently becalm a leg.
         opt = lambda k: (float(l[k]) if l.get(k) not in (None, '') else None)  # noqa: E731
         return Leg(name=str(l.get('name', f'Leg {i + 1}')),
+                   track=_parse_track(l.get('track')),
+                   pattern=_parse_pattern(l.get('pattern')),
+                   survey_lines=_parse_survey_lines(l.get('survey_lines')),
+                   turn_radius_nm=float(
+                       l['turn_radius_nm'] if l.get('turn_radius_nm') not in (None, '')
+                       else get_model().data.get('turn_model', {}).get('radius_nm', 0.0)),
                    kind=str(l.get('kind', 'transit')),
                    distance_nm=float(l.get('distance_nm', 0.0)),
                    speed_kt=float(l.get('speed_kt', 6.0)),
@@ -217,7 +328,7 @@ def _parse_request(body: dict) -> tuple[list[Leg], Environment, Vessel,
     return legs, env, vessel, override, start_time, waypoints, unit
 
 
-def _write_report(result, unit: str, title: str) -> dict:
+def _write_report(result, unit: str, title: str, currents_source: str = '') -> dict:
     """Write the mission report and describe what happened.
 
     Returns `{'written': bool, 'path': str|None, 'error': str|None}` — the UI
@@ -237,7 +348,8 @@ def _write_report(result, unit: str, title: str) -> dict:
             path = path.with_name(f'{path.stem}-{n}{path.suffix}')
             n += 1
         text = mission_report.render(result, generated=when,
-                                     waypoint_unit=unit, title=title)
+                                     waypoint_unit=unit, title=title,
+                                     currents_source=currents_source)
         path.write_text(text, encoding='utf-8', newline='\n')
         try:
             shown = str(path.relative_to(ROOT))
@@ -339,8 +451,147 @@ class Handler(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET                                     # noqa: N815
 
+    def _currents(self, body: dict) -> None:
+        """Per-leg set and drift from the OFS surface forecast.
+
+        The mission is dead-reckoned from (lat, lon) at departure_utc and each
+        leg sampled along its own track and time window. What comes back is
+        exactly what an operator would otherwise type into the per-leg current
+        boxes — the model is not involved and no coefficient moves.
+        """
+        try:
+            lat = float(body['lat'])
+            lon = float(body['lon'])
+        except (KeyError, TypeError, ValueError):
+            return self._error(400, 'give a departure position as lat and lon')
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return self._error(400, f'position {lat}, {lon} is not on the earth')
+
+        raw = str(body.get('departure_utc') or '').strip()
+        if not raw:
+            return self._error(400, 'give departure_utc — the mission start as a UTC '
+                                    'instant, e.g. 2026-08-13T14:00:00Z')
+        try:
+            departure = ofs.parse_time(raw)
+        except ValueError:
+            return self._error(400, f'could not read departure_utc {raw!r}')
+
+        legs = body.get('legs')
+        if not isinstance(legs, list) or not legs:
+            return self._error(400, 'give the legs to resolve')
+        if len(legs) > 32:
+            return self._error(400, 'too many legs')
+        for leg in legs:
+            if not isinstance(leg, dict):
+                return self._error(400, 'each leg must be a JSON object')
+
+        # How long the mission runs, so a cycle can be judged before it is used.
+        hours = 0.0
+        for leg in legs:
+            try:
+                speed = float(leg.get('speed_kt') or 0.0)
+                dist = float(leg.get('distance_nm') or 0.0)
+                if leg.get('kind') == 'survey' and leg.get('lines'):
+                    dist = float(leg['lines']) * float(leg.get('line_length_nm') or 0.0)
+                hours += float(leg.get('loiter_hours') or 0.0)
+                hours += (dist / speed) if speed > 0 else 0.0
+            except (TypeError, ValueError):
+                return self._error(400, 'legs need numeric distance, speed and loiter')
+        if hours > 240:
+            return self._error(400, 'that mission is longer than any forecast')
+        end = departure + dt.timedelta(hours=hours)
+
+        bbox = ofs.mission_bbox(lat, lon, legs)
+        tag = ofs.covering_cycle(departure, end, bbox)
+        fetched = False
+        if tag is None:
+            if body.get('offline'):
+                return self._error(503, 'no cached forecast covers this mission and '
+                                        'fetching is off — enter currents by hand')
+            try:
+                tag = ofs.fetch_cycle(bbox=bbox, quiet=True)
+                fetched = True
+            except RuntimeError as exc:
+                # Offline, or NOAA down, or the mission is outside the model.
+                # Each is the operator's to act on, so say which.
+                return self._error(503, f'could not get the forecast: {exc}')
+
+        try:
+            rows, prov = ofs.resolve_legs(lat, lon, departure, legs, tag=tag)
+        except (RuntimeError, ValueError) as exc:
+            return self._error(503, f'could not read the forecast: {exc}')
+
+        out = {'legs': rows, 'source': prov, 'fetched': fetched,
+               'mission_hours': round(hours, 2)}
+        span_end = ofs.parse_time(prov['span'][1])
+        if end > span_end:
+            over = (end - span_end).total_seconds() / 3600.0
+            out['warning'] = (f'the mission runs {over:.1f} h past the end of this '
+                              f'forecast — the last legs have no data')
+        if all('current_speed_kt' not in r for r in rows):
+            out['warning'] = ('no leg fell on model water — check the departure '
+                              'position is inside the forecast domain')
+        return self._json(200, out)
+
+    def _lineplan(self, body: dict) -> None:
+        """Parse an uploaded line plan and describe what came out.
+
+        The file arrives base64 so one path carries both text formats and the
+        zipped ones. Nothing is planned here and nothing is stored: this
+        returns the geometry and a summary for the operator to CHECK before it
+        is used, because a line plan that read cleanly into the wrong place
+        looks exactly like one that read correctly.
+        """
+        import base64
+        raw = body.get('data')
+        if not isinstance(raw, str) or not raw:
+            return self._error(400, 'send the file contents as base64 in "data"')
+        try:
+            blob = base64.b64decode(raw, validate=True)
+        except (ValueError, TypeError):
+            return self._error(400, 'that was not valid base64')
+        if len(blob) > MAX_BODY:
+            return self._error(413, 'that line plan is too large')
+
+        zone = body.get('utm_zone')
+        try:
+            plan = lineplan.sniff_and_read(
+                blob, str(body.get('filename') or ''),
+                zone=(None if zone in (None, '') else int(zone)),
+                northern=bool(body.get('northern', True)))
+        except lineplan.LinePlanError as exc:
+            # The operator's problem to fix, and the message says how.
+            return self._error(422, str(exc))
+        except Exception as exc:                          # noqa: BLE001
+            self.log_message('lineplan: %r', exc)
+            return self._error(422, 'could not read that line plan')
+
+        if len(plan.lines) > MAX_SURVEY_LINES:
+            return self._error(422, f'that plan has {len(plan.lines)} lines, '
+                                    f'more than the {MAX_SURVEY_LINES} allowed')
+        return self._json(200, {'summary': lineplan.describe(plan),
+                                'lines': plan.as_tracks()})
+
     def do_POST(self):                                   # noqa: N802
         route = self.path.split('?', 1)[0]
+        if route == '/api/lineplan':
+            body = self._read_body()
+            if body is None:
+                return
+            try:
+                return self._lineplan(body)
+            except Exception as exc:                      # noqa: BLE001
+                self.log_message('lineplan: %r', exc)
+                return self._error(500, 'internal error reading the line plan')
+        if route == '/api/currents':
+            body = self._read_body()
+            if body is None:
+                return
+            try:
+                return self._currents(body)
+            except Exception as exc:                      # noqa: BLE001
+                self.log_message('currents: %r', exc)
+                return self._error(500, 'internal error while reading the forecast')
         if route not in ('/api/plan', '/api/max-survey'):
             return self._error(404, 'not found')
 
@@ -356,16 +607,36 @@ class Handler(BaseHTTPRequestHandler):
         model = get_model()
         try:
             if route == '/api/plan':
+                # A forecast FIELD, not per-leg numbers, when the caller asks
+                # for one and the legs carry geometry to locate it with. This
+                # is the only place in planning that can touch the network,
+                # and a failure degrades to the typed currents rather than
+                # costing the operator their plan.
+                env_at, field_note = None, None
+                if body.get('use_forecast_currents') and any(
+                        l.track or l.pattern or l.survey_lines for l in legs):
+                    try:
+                        env_at = ofs.env_factory(
+                            env, ofs.parse_time(str(body.get('departure_utc') or '')))
+                    except (ValueError, RuntimeError) as exc:
+                        field_note = f'planned without the forecast: {exc}'
                 result = plan(legs, env, vessel, model, override,
                               start_time=start_time, waypoints=waypoints,
-                              waypoint_unit=unit)
+                              waypoint_unit=unit, env_at=env_at)
                 payload = result.to_dict()
+                if env_at is not None:
+                    payload['currents_field'] = {
+                        'label': env_at.label, 'tag': env_at.tag,
+                        'asked': env_at.asked, 'covered': env_at.covered}
+                if field_note:
+                    payload['currents_field'] = {'error': field_note}
                 # The report is a CONVENIENCE, not part of the answer: a full
                 # disk or a read-only docs/ must not cost the operator their
                 # plan. Failures are reported in the payload and logged, never
                 # raised.
-                payload['report'] = _write_report(result, unit,
-                                                  str(body.get('title') or ''))
+                payload['report'] = _write_report(
+                    result, unit, str(body.get('title') or ''),
+                    str(body.get('currents_source') or ''))
                 return self._json(200, payload)
 
             out = {'max_survey_nm': max_survey_length(legs, env, vessel, model,

@@ -99,13 +99,14 @@ main {
 .field > span { font-size: .78rem; color: var(--ink-soft); font-weight: 600; }
 .field em { font-style: normal; opacity: .75; font-weight: 400; }
 
-input, select, output.readout, .readout {
+input, select, textarea, output.readout, .readout {
   font: inherit; font-size: .92rem;
   padding: .42rem .55rem; width: 100%;
   color: var(--ink); background: var(--bg);
   border: 1px solid var(--line); border-radius: 7px;
 }
-input:focus-visible, select:focus-visible, button:focus-visible {
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 .readout {
@@ -271,3 +272,53 @@ tr.here td { font-weight: 700; }
    collide with the pill and warning rules above. */
 #maxOut .ok  { color: var(--ok);  font-weight: 600; }
 #maxOut .bad { color: var(--bad); font-weight: 600; }
+
+/* Forecast-currents readout. Scoped by id for the same reason as #maxOut: a
+   bare .warn/.bad here would collide with the warning list and the tiles. */
+#currentsOut.warn { color: var(--warn); }
+#currentsOut.bad  { color: var(--bad); font-weight: 600; }
+#currentsBtn[disabled] { opacity: .55; cursor: progress; }
+
+/* READING THE FORECAST — the only animated thing in this app, and the only
+   state where the operator is waiting on a network the boat may not have.
+   Deliberately louder than the answer it is fetching.
+
+   It shares the failure colour with .bad above, so the BLINK is what tells the
+   two apart: a red note sitting still has failed, one that pulses is still
+   working. The weight goes past .bad's 600 for the same reason. */
+#currentsOut.busy {
+  color: var(--bad);
+  font-weight: 700;
+  animation: currents-reading 1.1s steps(1, end) infinite;
+}
+
+/* A square wave, not a fade: ~0.9 Hz, well inside the three-flashes-a-second
+   limit that exists for photosensitive readers. Do not speed this up to make
+   it more urgent — past 3 Hz it stops being emphasis and becomes a hazard. */
+@keyframes currents-reading {
+  0%  { opacity: 1; }
+  50% { opacity: .3; }
+}
+
+/* Under a hertz is gentle, but a blink is still motion. An operator who has
+   asked the OS for less of it keeps the bold red and loses only the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  #currentsOut.busy { animation: none; }
+}
+
+/* Geometry entry. Tracks are typed as coordinates, so the boxes are
+   monospaced — a transposed digit in a column of positions is far easier to
+   catch when the columns line up. */
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .84rem; line-height: 1.45; resize: vertical; min-height: 3.4rem;
+}
+.row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.row > input[type="file"] { flex: 1 1 14rem; }
+label.inline {
+  display: inline-flex; align-items: center; gap: .4rem; width: auto;
+  color: var(--ink-soft); font-size: .82rem;
+}
+label.inline input[type="checkbox"] { width: auto; }
+#planOut.warn { color: var(--warn); }
+#planOut.bad { color: var(--bad); font-weight: 600; }

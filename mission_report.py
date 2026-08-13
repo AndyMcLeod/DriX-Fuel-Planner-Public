@@ -66,8 +66,16 @@ def filename(plan: PlanResult, when: dt.datetime, name: str = '') -> str:
 
 
 def render(plan: PlanResult, *, generated: dt.datetime,
-           waypoint_unit: str = 'km', title: str = '') -> str:
-    """The report, as Markdown."""
+           waypoint_unit: str = 'km', title: str = '',
+           currents_source: str = '') -> str:
+    """The report, as Markdown.
+
+    `currents_source` names the forecast the per-leg currents were read from,
+    when they came from one. A forecast is a perishable input — the same
+    mission planned off a different cycle is a different plan — so the report
+    records WHICH cycle rather than leaving the numbers looking like constants.
+    Typed-in currents leave it empty and the line does not appear.
+    """
     p = plan
     out: list[str] = []
     w = out.append
@@ -81,6 +89,9 @@ def render(plan: PlanResult, *, generated: dt.datetime,
       f'{p.gondola.upper()} gondola ({p.gondola_status}) · '
       f'planned by the DriX mission fuel planner.')
     w('')
+    if currents_source:
+        w(f'Currents: {currents_source}')
+        w('')
 
     # -- headline ----------------------------------------------------------- #
     w('## Verdict')
