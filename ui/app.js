@@ -217,7 +217,10 @@ const TIPS = {
     'Bearing of line 1 in degrees true. Alternate lines run the reciprocal, '
     + 'each starting where the last finished.',
   '#patSpacing':
-    'Distance between adjacent survey lines.',
+    'Distance between adjacent survey lines, in METRES. It reaches the planner '
+    + 'as nautical miles — 185 m is a tenth of a mile — and the turn between '
+    + 'lines is costed from it: below twice the turn radius the boat cannot '
+    + 'hold a half circle and pays for a wider one.',
   '#patOut':
     'The pattern this anchor produces, using the line count and length from the '
     + 'survey leg below — there is one place to change them.',
@@ -627,11 +630,17 @@ function homeTrack() {
   return out ? out.slice().reverse() : null;
 }
 
+// The BOX is metres; the wire, the engine and every test stay in NM. This is
+// the one seam that converts, so nothing downstream had to learn a second unit
+// — the same arrangement the waypoint unit uses, where changing the display
+// never moves a waypoint.
+const M_PER_NM = KM_PER_NM * 1000;
+
 function surveyPattern() {
   const lat = $('patLat').value;
   const lon = $('patLon').value;
-  const spacing = Number($('patSpacing').value);
-  if (lat === '' || lon === '' || !(spacing > 0)) return null;
+  const spacingM = Number($('patSpacing').value);
+  if (lat === '' || lon === '' || !(spacingM > 0)) return null;
   return {
     anchor: [Number(lat), Number(lon)],
     bearing_deg: Number($('patBearing').value) || Number($('surCourse').value) || 0,
@@ -639,7 +648,7 @@ function surveyPattern() {
     // place to change them and the two can never disagree.
     lines: Number($('surLines').value),
     length_nm: Number($('surRange').value),
-    spacing_nm: spacing,
+    spacing_nm: spacingM / M_PER_NM,
   };
 }
 
@@ -652,9 +661,13 @@ function refreshPattern() {
     return;
   }
   const total = p.lines * p.length_nm;
+  // Echo the spacing back in the unit it was TYPED in. Reading the box rather
+  // than converting p.spacing_nm back means a rounding cannot make the readout
+  // disagree with what is on screen above it.
+  const spacingM = Number($('patSpacing').value);
   $('patOut').textContent =
     `${p.lines} lines × ${p.length_nm} NM on ${fmtDeg(p.bearing_deg)}, `
-    + `${p.spacing_nm} NM apart — ${total.toFixed(1)} NM of line`;
+    + `${spacingM} m apart — ${total.toFixed(1)} NM of line`;
 }
 
 function fmtDeg(d) {

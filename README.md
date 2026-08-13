@@ -208,6 +208,9 @@ the environment is sampled where and when the vehicle actually is:
 - **`track`** — a polyline of `[lat, lon]` for a transit.
 - **`pattern`** — a survey lawnmower: `anchor`, `bearing_deg`, `length_nm`,
   `spacing_nm`, `lines`, and optionally `step_bearing_deg` / `turn_radius_nm`.
+  The API is in nautical miles throughout; the **app's Line spacing box is in
+  metres** and converts at the one seam that builds the request, so a spacing
+  reads the way a surveyor writes it without a second unit reaching the engine.
 
 Both are optional, and a leg without them plans exactly as it always did.
 Given either, `distance_nm` and `course_deg` are derived from the geometry, and

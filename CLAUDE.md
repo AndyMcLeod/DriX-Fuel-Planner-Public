@@ -7,7 +7,7 @@ reserve.
 
 ```bash
 python server.py                          # UI on http://127.0.0.1:8765
-python -m unittest discover -s tests      # 361 tests — must stay green
+python -m unittest discover -s tests      # 366 tests — must stay green
 ```
 
 Stdlib only. No dependencies, no build step.
@@ -21,7 +21,7 @@ coefficient without knowing which measurement or decision it traces to.
 
 ## Where things stand (2026-08-13, model.json v2.7.0)
 
-Tree clean, both remotes pushed, **361 tests** green. Six days of MCAP data
+Tree clean, both remotes pushed, **366 tests** green. Six days of MCAP data
 (04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
 
 **Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
@@ -458,6 +458,26 @@ A **Mission geometry** card, all of it optional: import a line plan, type
 transit waypoints (lat, lon per line, monospaced so a transposed digit shows),
 or give a survey anchor/bearing/spacing. Line count and length come from the
 survey leg, so there is ONE place to change them.
+
+**Line spacing is typed in METRES (Andy, 2026-08-13); everything downstream
+stays in NM.** `surveyPattern()` is the one seam that divides by `M_PER_NM`
+(derived from `KM_PER_NM`, so there is a single definition of a nautical mile in
+the file), and the raw metres never enter the payload — the API, the engine and
+every geometry test speak NM exactly as before. `step="any"` on the box is
+deliberate: a spacing usually falls out of a swath calculation and lands on
+something like 62.5 m, which an integer step would reject at submit with a
+browser message rather than a useful one. **A unit seam fails silently and
+plausibly** — get it wrong by 1852 and the lines are still drawn, still
+parallel, still the right count — so the conversion, the label and the readout
+are pinned together in `TestSurveySpacingUnit`, mutation-checked 6/6.
+
+**Worth knowing when testing it: spacing only changes the answer BELOW 50 m.**
+`TurnModel.path_nm` returns a flat half-circle for any spacing ≥ 2r, and r is
+0.0135 NM ≈ 25 m, so 51 m, 100 m and 1852 m all cost identically; below the
+threshold the vehicle runs out and back and the cost climbs (measured on the
+live console: 49 m → 54.480 L, 25 m → 54.592 L, 10 m → 54.662 L against a flat
+54.475 L above it). Two spacings giving the same plan is the model working, not
+the conversion failing — which is exactly what it looked like at first.
 
 **Imported lines beat a generated pattern** — they are what the surveyor drew.
 They are held in a JS variable, never round-tripped through a textarea: a real

@@ -262,6 +262,53 @@ class TestQuickStart(unittest.TestCase):
         self.assertNotIn('Quick start</h1>', html)
 
 
+class TestSurveySpacingUnit(unittest.TestCase):
+    """Line spacing is typed in METRES and travels in nautical miles.
+
+    A unit seam is the kind of thing that fails silently and plausibly: get it
+    wrong by 1852 and every line is still drawn, still parallel, still the right
+    count — just in the wrong ocean's worth of spacing. So the conversion, the
+    label and the readout are pinned together."""
+
+    def setUp(self):
+        self.html = (UI / 'index.html').read_text(encoding='utf-8')
+        self.js = (UI / 'app.js').read_text(encoding='utf-8')
+
+    def test_the_box_is_labelled_metres(self):
+        block = self.html[self.html.index('Line spacing'):]
+        self.assertIn('<em>m</em>', block[:120])
+        self.assertNotIn('<em>NM</em>', block[:120])
+
+    def test_the_conversion_is_one_seam_and_divides_by_1852(self):
+        """Derived from KM_PER_NM rather than a second literal, so there is one
+        definition of a nautical mile in the file."""
+        self.assertIn('const M_PER_NM = KM_PER_NM * 1000;', self.js)
+        self.assertIn('const KM_PER_NM = 1.852;', self.js)
+        self.assertIn('spacing_nm: spacingM / M_PER_NM', self.js)
+
+    def test_the_raw_metres_never_reach_the_wire(self):
+        """The engine, the API and every geometry test speak NM. A metres field
+        riding along in the pattern payload would be a second unit downstream
+        had never agreed to."""
+        body = self.js[self.js.index('function surveyPattern()'):]
+        body = body[:body.index('\n}')]
+        self.assertIn('spacing_nm:', body)
+        self.assertNotIn('spacing_m:', body)
+
+    def test_the_readout_echoes_metres(self):
+        out = self.js[self.js.index('function refreshPattern()'):]
+        out = out[:out.index('\nfunction ')]
+        self.assertIn('m apart', out)
+        self.assertNotIn('NM apart', out)
+
+    def test_the_box_accepts_a_fractional_spacing(self):
+        """A spacing usually comes off a swath calculation and lands on
+        something like 62.5 m. An integer step would reject it at submit."""
+        tag = self.html[self.html.index('id="patSpacing"'):]
+        tag = tag[:tag.index('>')]
+        self.assertIn('step="any"', tag)
+
+
 class TestHoverTips(unittest.TestCase):
     """Every control explains itself, in a layer anchored to the control.
 

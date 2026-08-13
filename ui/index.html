@@ -185,10 +185,14 @@
           <input type="number" id="patBearing" step="1" min="0" max="360"
                  placeholder="20">
         </label>
+        <!-- Metres, not NM (Andy, 2026-08-13). `step="any"` on purpose: a
+             spacing usually comes off a swath-width calculation and lands on
+             something like 62.5 m, which an integer step would reject at
+             submit with a browser message rather than a useful one. -->
         <label class="field">
-          <span>Line spacing <em>NM</em></span>
-          <input type="number" id="patSpacing" step="0.01" min="0.001"
-                 placeholder="0.1">
+          <span>Line spacing <em>m</em></span>
+          <input type="number" id="patSpacing" step="any" min="1"
+                 placeholder="185">
         </label>
         <div class="field span2">
           <span>Pattern</span>
