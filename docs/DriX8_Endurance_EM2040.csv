@@ -2,35 +2,35 @@
 
 RPM,SOG - M/S*,SOG - KNOTS*,LPH,PCT / HR,NM / LITER,
 0,0.0,0.0,0.0,0.0,0,
-1000,1.907687,3.708247,0.971029,0.388412,3.818882,dagger
-1250,2.384609,4.635309,1.299149,0.51966,3.567957,dagger
-1500,2.861531,5.562371,1.707297,0.682919,3.257998,
-1750,3.338452,6.489432,2.218414,0.887365,2.925258,
-2000,3.815374,7.416494,2.85544,1.142176,2.597321,
-2250,4.292296,8.343556,3.641319,1.456528,2.291355,
-2500,4.769218,9.270618,4.598991,1.839596,2.015794,
-2750,5.246139,10.197679,5.751397,2.300559,1.773079,
-3000,5.723061,11.124741,7.121478,2.848591,1.562139,
+1000,1.898518,3.690423,1.125201,0.45008,3.279791,dagger
+1250,2.373147,4.613029,1.440935,0.576374,3.201413,dagger
+1500,2.847777,5.535635,1.822169,0.728868,3.037937,
+1750,3.322406,6.45824,2.294765,0.917906,2.814336,
+2000,3.797035,7.380846,2.884586,1.153835,2.558719,
+2250,4.271665,8.303452,3.617495,1.446998,2.29536,
+2500,4.746294,9.226058,4.519354,1.807742,2.041455,
+2750,5.220924,10.148664,5.616027,2.246411,1.807089,
+3000,5.695553,11.071269,6.933376,2.773351,1.596808,
 * NOTE Actual SOG will vary with conditions - these are nominal values ONLY
 M/S / Knot,1.94384
 Tank L,250
 
 Whole-knot chart source
 KNOTS,RPM*,LPH,NM / LITER
-4,1079,1.067051,3.748649,dagger
-5,1348,1.448888,3.450922,dagger
-6,1618,1.934341,3.101831,
-7,1888,2.552204,2.742727,
-8,2157,3.33127,2.401486,
-9,2427,4.300333,2.092861,
-10,2697,5.488186,1.822096,
-11,2966,6.923621,1.588764,
+4,1084,1.225442,3.264128,dagger
+5,1355,1.591373,3.141942,dagger
+6,1626,2.046996,2.931124,
+7,1897,2.625246,2.666417,
+8,2168,3.359054,2.381623,
+9,2439,4.281354,2.102139,
+10,2710,5.425078,1.843292,
+11,2981,6.823158,1.612157,
 
-"Source: DriX-8 MCAP logs 04-09 Aug 2026 (EM2040 fitted) — 4.85 h steady cruise, flow meter vs thruster RPM."
-"Fuel law (through origin) L/H = 1.0038e-03·RPM -2.7743e-07·RPM² +2.4471e-10·RPM³  (R² 0.9996),"
-"anchored by (0,0) and the measured 0.95 L/H station-keeping figure at ~1005 rpm."
-"Speed law (through origin) KNOTS = 0.003708·RPM  (R² 0.949; SOG-based, ±5-8% tidal)."
-"Both agree with the primary in-band laws (planner model.json) to ≤3.7% in-window, 0.3% at 8 kt."
+"Source: DriX-8 MCAP logs (EM2040 fitted) — 131.90 h steady cruise over 1279-3080 rpm, flow meter vs thruster RPM."
+"Fuel law (through origin) L/H = 1.3598e-03·RPM -5.1052e-07·RPM² +2.7587e-10·RPM³,"
+"anchored by (0,0) and the measured 1.05 L/H station-keeping figure at ~1010 rpm."
+"Speed law (through origin) KNOTS = 0.003690·RPM  (SOG-based, ±5-8% tidal)."
+"Against the planner's own laws (model.json): 0.5% at 8 kt, ≤1.1% above 1600 rpm, worst 10.8% at 1280 rpm where the through-origin constraint bends toward idle."
 "Drivetrain: direct drive, shaft rpm = engine rpm (trawling motor unused). 0 rpm = engine OFF = 0 L/H."
 The engine idles at ~1000 rpm (≈0.95 L/H — the 1000 row) and engages at ~1100 minimum:
 the 0-1000 rpm band is not an operating region; the curve merely passes through it.

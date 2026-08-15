@@ -19,18 +19,49 @@ block is tagged `"fitted": true/false` so measurements are never confused with
 assumptions. Do not hardcode numbers in `engine.py` or the UI; do not change a
 coefficient without knowing which measurement or decision it traces to.
 
-## Where things stand (2026-08-13, model.json v2.7.0)
+## Where things stand (2026-08-15, model.json v2.8.0)
 
-Tree clean, both remotes pushed, **400 tests** green. Six days of MCAP data
-(04–09 Aug) cached and adopted; no new bag days since. Nothing half-finished.
+Tree clean, both remotes pushed, **400 tests** green. **16 MCAP sessions
+(04–15 Aug) cached and adopted.** Nothing half-finished.
 
-**Newest thing: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
+**Newest thing: THE 16-SESSION REFIT (2026-08-15), and it is the first one that
+MOVED the curve.** 131.9 h of steady cruise against 4.85 h, spanning 1279–3080
+rpm against 1400–2500. Efficiency shifts up to **11.8%** at 5 and 10 kt — the
+ENDS correcting where the old law extrapolated, not the middle moving. Adopted
+on evidence, not on the size of the change: against the measured bin medians,
+which neither law was fitted to, speed RMS goes 0.363 → 0.290 kt and fuel 0.142
+→ 0.115 L/h, and the new law wins by most at exactly those extremes. At 8 kt:
+**2158 rpm, 3.31 L/h, 2.41 NM/L**; max survey **370.9 → 381.9 NM**; loiter
+**0.95 → 1.05 L/h**. Mission fuel is UNCHANGED at 185.7 L — the reserve is a
+needle position and the gauge did not move (below).
+
+**⚠ `compare_fits.py` said LARGE / do not adopt blind, and it was right the
+first time.** Two data faults were driving it, and both are now rejected by a
+guard rather than by hand — `fit_em2040.py` rejects any cruise sample whose L/h
+disagrees with what the same RPM burns everywhere else (pooled bin median ± 6
+MAD):
+- **08-14** reported 12–14 L/h at 1889 rpm and 4.1 kt — 4.6× the burn at those
+  revs, and not contiguous. Not a new high-power regime; a broken flow meter.
+- **08-15** reported **0.00 L/h while cruising** — the opposite tail, and the one
+  I had not looked for. 14,373 samples (4.0 h) rejected in total.
+
+**⚠ THE GAUGE DID NOT CHANGE, DELIBERATELY.** The new data contains two refuels
+(08-10T11 rose 15 points, 08-14 rose 39), so the gauge is no longer one drawdown
+— see "the drawdown is the unit" below. Segmented properly it gives 2.34 ±
+0.16 L/point over **37–100%**, which reaches far deeper than anything before
+(everything prior stopped at 72%). It is **not adopted**: 1.7σ from the 2.06 in
+force, and restricted to the old 72–86% band the new spans read **1.85**, on the
+other side of it. The direction is also the unsafe one. `gauge_calibration` is
+untouched and the gauge report's new §5.1 states both numbers side by side so
+the two documents cannot look like they disagree.
+
+**Newest before that: MISSION GEOMETRY (2026-08-13).** A leg can now carry a
 `track` (a polyline of waypoints) or a `pattern` (a survey lawnmower), and
 `plan(env_at=...)` samples the environment PER RUN — per survey line, per
 transit segment — at where and when the vehicle actually is. That is what
 makes a tide real to the planner instead of one averaged number per leg.
 **Both are optional and absent behaves exactly as before**, pinned by a test.
-`model.json` is **v2.7.0**: one new block, `turn_model`, `fitted: false`.
+`model.json` is **v2.8.0**: one new block, `turn_model`, `fitted: false`.
 
 **Before that: the per-leg currents can be read off the NOAA forecast** rather
 than typed from a tide table — `currents.py`, the `Currents from forecast`
@@ -55,9 +86,9 @@ calm and 329.3 NM at sea state 3):
 
 | | |
 |---|---|
-| Mission fuel to the floor | **185.7 L** — 54.8 h, 439 NM |
+| Mission fuel to the floor | **185.7 L** — 56.0 h, 448 NM |
 | Same under the conservative reading (B) | 154.5 L — 45.6 h, 365 NM |
-| Max survey, default 20/20 NM transits | **370.9 NM** |
+| Max survey, default 20/20 NM transits | **381.9 NM** |
 | Tank volume (drawings, established) | 250 L |
 | Gauge scale, measured 72–86% | 2.06 ± 0.11 L/point |
 
@@ -91,7 +122,7 @@ Read the per-topic sections below for detail; this is the orientation.
    converts SOG to through-water speed per line. It moves the fuel, never the
    clock. Partly double-counts against the SOG-fitted speed law — the leg note
    says so.
-3. **Loiter holds** per leg, at the measured 0.95 L/h idle burn, taken at the
+3. **Loiter holds** per leg, at the measured 1.05 L/h idle burn, taken at the
    **START** of the leg so a hold on the way home arrives home late.
 4. **Marks bracket the mission**: `home_departure` … `home_arrival`, and
    `home_arrival.elapsed_hours == total_hours` is a pinned identity.
@@ -215,18 +246,75 @@ reading is worth 31 L.
    all four builders now share it, and all three Word documents came out
    byte-identical, so none was regenerated. See "Document builders" below.
 
-## Model detail (v2.6.0)
+## The ops sheet was pinned to a dead fit (2026-08-15)
+
+`build_endurance_sheet.py` loaded `tools/em2040_fit_2026-08-09.json` — a dated
+snapshot — so the refit rebuilt every other document while the endurance sheet
+came out **byte-identical**. The ops-facing table, the one an operator actually
+carries, was silently frozen on superseded coefficients.
+
+**How it surfaced:** `git status` showed the `.xlsx` modified and the `.csv`
+beside it untouched. Both are written in the same call from the same rows, so
+that combination is only possible if the numbers never moved and the xlsx
+difference was zip metadata. Worth remembering as a tell.
+
+It now reads `tools/rosbags/em2040_fit.json` and fails loudly if it is absent.
+Two hardcoded values went with it: the loiter anchor (0.95, which would have
+pulled the whole through-origin curve toward a burn the vehicle no longer has)
+now reads from `model.json`, and the agreement claim — "≤3.7% in-window, 0.3% at
+8 kt" — is **computed**, because it was true of one fit and quietly wrong after
+any other. It now reads 0.5% at 8 kt, ≤1.1% above 1600 rpm, worst 10.8% at
+1280 rpm where the through-origin constraint bends toward idle.
+
+## The drawdown is the unit, not the day (2026-08-15)
+
+Litres per indicated point is a **slope down a falling level**, so it is only
+defined while the level falls. Until this refit the record happened to be one
+long descent and every consumer read a day end to end. It is not any more.
+
+Measured as whole days, the two refuels produce a **negative** L/pt for the
+refuelled day and a pooled figure of **59 L/point** in the fit and **5.58** in
+the gauge report — against a true ~2.06. Both shipped that once and were caught
+by rebuilding and reading the output, not by a test.
+
+`tools/drawdown.py` now owns the segmentation — `drawdown_spans`,
+`usable_spans`, `pooled_scale` — and `fit_em2040.py`, `build_gauge_report.py`
+and `reserve_band.py` all read it, so they cannot disagree about what a point is
+worth. A span never crosses a refill and never spans two sessions. 17 usable
+falls, 211.5 L over 90.3 points.
+
+**Two statistics, and only one of them is a test of non-linearity.** Comparing
+the widest and narrowest of 17 falls gives 6.9σ — but the extremes of 17 samples
+are extreme by construction, and that number says only that the scatter exceeds
+gauge quantisation, i.e. something physical (sloshing, trim, hysteresis,
+temperature) is at work. The test that bears on reading A is **shallow against
+deep**: 1.85 vs 2.35 L/pt, **1.4σ**, not significant. The gauge report used to
+print the extremes figure followed by "not significant"; with 3 days that read
+sensibly and with 17 it was self-contradictory. It now says what each statistic
+can and cannot support.
+
+## Model detail (v2.8.0)
 
 - **Two gondolas, both measured.** `gondolas.em2040` (currently fitted) is
-  refitted from **6 days** of MCAP logs (04–09 Aug 2026, 4.85 h steady cruise):
-  fuel quadratic `L/h = 2.9364 − 0.0029704·RPM + 1.4581e-6·RPM²` (R² 0.9995,
-  valid 1400–3100 rpm) and speed `kt = 0.4861 + 0.0034479·RPM` (SOG-based,
-  ±5% tidal). `gondolas.em712` carries the 2024 trials trial laws (fuel valid
-  1020–2500 rpm). At 8 kt: EM2040 2.36 NM/L (interpolation) vs EM712 1.70
-  (extrapolated). **The 2 extra days moved efficiency ≤1% anywhere in 5–10 kt** —
-  the curve is confirmed, not merely fitted.
-- **Loiter figure:** 0.95 L/h at ~1005 rpm (20.8 h observed across 4 days; day
-  medians span 0.85–1.05) — use below the 1400 rpm fuel-law floor.
+  refitted from **16 MCAP sessions** (04–15 Aug 2026, 131.9 h steady cruise):
+  fuel quadratic `L/h = 3.1135 − 0.0029201·RPM + 1.3961e-6·RPM²` (R² 0.9933,
+  valid 1280–3080 rpm) and speed `kt = −0.4380 + 0.0039094·RPM` (SOG-based,
+  ±5% tidal). `gondolas.em712` carries the 2024 trials laws (fuel valid
+  1020–2500 rpm). At 8 kt: EM2040 2.41 NM/L (interpolation) vs EM712 1.68
+  (extrapolated).
+  **⚠ THIS REFIT MOVED THE CURVE, unlike the last one — up to 11.8% in
+  efficiency at 5 and 10 kt against ≤1% before.** That is the ENDS correcting,
+  not the middle moving: the old fit was built on 1400–2500 rpm and extrapolated
+  past it, this one has real data from 1279 to 3080. Checked against the measured
+  bin medians, which neither law was fitted to, the new one is better —
+  speed RMS 0.363 → 0.290 kt, fuel RMS 0.142 → 0.115 L/h — and wins by most at
+  exactly the two extremes (at 3080 rpm the old law was 0.63 kt slow, the new
+  0.13). **Adopt-blind was correctly refused first:** `compare_fits.py` returned
+  LARGE, and the cause was a corrupt day, not the curve (see the guard below).
+- **Loiter figure:** 1.05 L/h at ~1010 rpm (38.8 h observed across 13 sessions;
+  day medians span 0.85–1.50) — use below the 1280 rpm fuel-law floor. Raised
+  from 0.95 at the Aug-15 refit; the four days behind 0.95 are still in there,
+  and nine further sessions sit at or above 1.00.
 - **Gauge — read this carefully, an earlier note here was wrong.**
   **Established:** the gauge scale is **2.06 ± 0.11 L per indicated point** over
   the 72–86% band — 4σ below the 2.50 a linear 250 L tank gives, and agreeing
@@ -259,7 +347,7 @@ reading is worth 31 L.
 - **Direct drive: shaft rpm always equals engine rpm.** The only exception was
   the trawling motor, which is no longer used. So `thruster_rpm` IS engine rpm,
   and 0 rpm means the engine is stopped — 0 L/h exactly.
-- **The engine idles at ~1000 rpm**, burning ≈0.95 L/h. The "loiter" figure IS
+- **The engine idles at ~1000 rpm**, burning ≈1.05 L/h. The "loiter" figure IS
   the idle burn; they are the same measurement, not two.
 - **Minimum engagement jumps to ~1100 rpm.** The 0–1000 rpm band is not an
   operating region — a curve may pass through it, but the vehicle never sits
@@ -1302,9 +1390,12 @@ compares two of the engine's own outputs, ask what it would still pass with.
 ## Reserve floor raised to 25% (Andy, 2026-08-09)
 
 `reserve.default_fraction` 0.15 → 0.25. Policy, not a measurement. Under the
-adopted reading (A) mission fuel falls **211.4 → 185.7 L** (−12%), endurance
-62.4 → 54.8 h, planning range 499 → 439 NM, and `max_survey_length` on the
-default vessel **428 → 371 NM**.
+adopted reading (A) mission fuel falls **211.4 → 185.7 L** (−12%). The hours and
+miles that once accompanied those litres were quoted against the 6-day curve and
+have since moved with the Aug-15 refit: endurance is now **56.0 h** and planning
+range **448 NM** at 8 kt, with `max_survey_length` on the default vessel at
+**381.9 NM**. The LITRES are what this entry is about and they are unchanged —
+the reserve is a needle position, and the refit did not touch the gauge.
 
 Two things worth knowing about the change:
 

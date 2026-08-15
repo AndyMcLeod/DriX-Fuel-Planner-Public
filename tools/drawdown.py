@@ -42,6 +42,108 @@ def load(path):
     return d
 
 
+# A rise this big in the smoothed gauge is a refill, not sensor noise.
+GAUGE_RISE = 1.0
+# Below these a span says nothing: an idle stretch's gauge wanders a point or
+# two on essentially no fuel.
+GAUGE_MIN_L = 2.0
+GAUGE_MIN_PTS = 1.0
+
+
+def minute_medians(t, x, bucket_s=60):
+    """Robust 1-minute series — the raw gauge is quantised and noisy."""
+    t = np.asarray(t, float)
+    if len(t) == 0:
+        return np.array([]), np.array([])
+    k = ((t - t[0]) // bucket_s).astype(int)
+    keys = np.unique(k)
+    return (np.array([t[k == q][0] for q in keys]),
+            np.array([np.median(np.asarray(x, float)[k == q]) for q in keys]))
+
+
+def drawdown_spans(t, gas):
+    """(t0, t1, gas0, gas1) for each FALLING stretch, split at every refill.
+
+    Litres per indicated point is a slope measured down a drawdown, so it is
+    only defined while the level falls. Before 2026-08-15 the data happened to
+    be one long fall and every consumer took a day's first and last reading. The
+    moment it contained refuels — 08-10T11 rose 15 points, 08-14 rose 39 — that
+    assumption produced a NEGATIVE litres-per-point for the refuel day, a pooled
+    figure of 59 L/point against a true ~2.06 in the fit, and 5.58 L/point in
+    the gauge report. Hence this: cut at every refill, never span one, never
+    span two sessions.
+    """
+    bt, bg = minute_medians(t, gas)
+    if len(bt) < 3:
+        return []
+    spans, s = [], 0
+    for i in range(1, len(bt)):
+        if bg[i] - bg[s:i].min() > GAUGE_RISE:          # the level rose: refill
+            if bg[s] - bg[i - 1] > 0:
+                spans.append((bt[s], bt[i - 1], bg[s], bg[i - 1]))
+            s = i
+    if bg[s] - bg[-1] > 0:
+        spans.append((bt[s], bt[-1], bg[s], bg[-1]))
+    return spans
+
+
+def litres_between(t, lph, t0, t1):
+    """Metered litres over a window, bridging recording gaps rather than
+    integrating across them."""
+    t = np.asarray(t, float)
+    m = (t >= t0) & (t <= t1)
+    tt, ll = t[m], np.asarray(lph, float)[m]
+    if len(tt) < 2:
+        return 0.0
+    dt = np.diff(tt)
+    good = (dt > 0) & (dt < 30)
+    return float(np.sum(ll[:-1][good] * dt[good]) / 3600.0)
+
+
+def usable_spans(cache=CACHE_DEFAULT):
+    """Every drawdown in the cache worth calibrating on, with its own slope.
+
+    This is the one place the gauge scale is derived from. `fit_em2040.py`,
+    `build_gauge_report.py` and `reserve_band.py` all read it, so they cannot
+    disagree about what a point is worth.
+    """
+    out = []
+    for p in sorted(Path(cache).glob('2026-*.npz')):
+        d = load(p)
+        t = d['t3_t']
+        if len(t) < 50 or not len(d.get('vs_t', [])):
+            continue
+        lph = d['t3_fuel_lph'].astype(float)
+        gas = np.interp(t, d['vs_t'], d['vs_gas_pct'].astype(float))
+        for t0, t1, g0, g1 in drawdown_spans(t, gas):
+            litres, pts = litres_between(t, lph, t0, t1), g0 - g1
+            if litres < GAUGE_MIN_L or pts < GAUGE_MIN_PTS:
+                continue
+            out.append(dict(day=p.stem, litres=litres, points=pts,
+                            from_pct=g0, to_pct=g1, l_per_point=litres / pts,
+                            sig=(litres / pts) * SIG_PTS / pts))
+    return out
+
+
+def pooled_scale(spans=None, cache=CACHE_DEFAULT):
+    """(L/point, weighted scatter, litres, points, band_lo, band_hi, n).
+
+    The denominator is the TOTAL DRAWDOWN TRAVELLED, not band_hi - band_lo: the
+    spans are separate falls that may revisit the same part of the gauge, so the
+    band only says where it looked.
+    """
+    spans = usable_spans(cache) if spans is None else spans
+    if not spans:
+        return None
+    L = sum(s['litres'] for s in spans)
+    P = sum(s['points'] for s in spans)
+    rate = L / P
+    var = sum(s['points'] * (s['l_per_point'] - rate) ** 2 for s in spans) / P
+    return (rate, float(np.sqrt(var)), L, P,
+            min(s['to_pct'] for s in spans), max(s['from_pct'] for s in spans),
+            len(spans))
+
+
 def days(cache=CACHE_DEFAULT):
     """Per-day gauge and fuel summary, oldest first."""
     out = []

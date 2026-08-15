@@ -97,6 +97,63 @@ for p in sorted(CACHE.glob('2026*.npz')):
     print(f'{p.stem}: cruise {cruise.sum():,} ({cruise.sum()/3600:.2f} h)  '
           f'loiter {loiter.sum():,} ({loiter.sum()/3600:.2f} h)')
 
+# ------------------------------------------------------- physics guard on fuel
+# A flow meter can lie, and on 2026-08-14 one did: 6,112 samples reporting
+# 12-14 L/h at 1889 rpm and 4.1 kt, where every other day burns 2.8 L/h at the
+# same revs. Nothing in the cruise filter above could see it — the readings were
+# steady, straight and fast enough to look like textbook cruise — so the fit
+# swallowed them and moved the curve 11% at the edges.
+#
+# The guard is that a sample's fuel rate must agree with what the SAME RPM burns
+# everywhere else. Median and MAD are taken over the POOLED data so that one bad
+# day cannot define its own normal, and the threshold is deliberately loose:
+# this is here to reject the physically impossible, not to tidy the scatter that
+# sea state and loading legitimately produce.
+GUARD_MAD = 6.0        # reject beyond this many MAD from the bin median
+GUARD_BIN = 100        # rpm
+
+
+def mad(x):
+    """Median absolute deviation, scaled to be comparable with a std dev."""
+    return 1.4826 * float(np.median(np.abs(x - np.median(x))))
+
+
+_pr = np.concatenate([f['rpm'][f['cruise']] for f in DAYS])
+_pl = np.concatenate([f['lph'][f['cruise']] for f in DAYS])
+_edges = np.arange(1200, 3200 + GUARD_BIN, GUARD_BIN)
+_lim = {}
+for _lo in _edges[:-1]:
+    _m = (_pr >= _lo) & (_pr < _lo + GUARD_BIN)
+    if _m.sum() < 120:
+        continue
+    _med, _s = float(np.median(_pl[_m])), mad(_pl[_m])
+    # A degenerate MAD (a bin sitting on one reported value) would reject every
+    # neighbour; fall back to a fraction of the median so the band stays real.
+    _s = max(_s, 0.15 * _med)
+    _lim[_lo] = (_med - GUARD_MAD * _s, _med + GUARD_MAD * _s)
+
+_rejected = []
+for f in DAYS:
+    keep = f['cruise'].copy()
+    idx = np.where(f['cruise'])[0]
+    if len(idx):
+        b = (np.floor(f['rpm'][idx] / GUARD_BIN) * GUARD_BIN).astype(int)
+        lo_hi = np.array([_lim.get(int(x), (-np.inf, np.inf)) for x in b])
+        bad = (f['lph'][idx] < lo_hi[:, 0]) | (f['lph'][idx] > lo_hi[:, 1])
+        keep[idx[bad]] = False
+        if bad.any():
+            _rejected.append((f['day'], int(bad.sum()), len(idx),
+                              float(np.median(f['lph'][idx][bad]))))
+    f['cruise'] = keep
+
+if _rejected:
+    print('\nPHYSICS GUARD — samples whose fuel rate disagrees with their own RPM')
+    for day, n, of, med in _rejected:
+        print(f'  {day}: rejected {n:,} of {of:,} cruise samples '
+              f'({n / of:.1%}), median {med:.2f} L/h')
+    print(f'  total rejected: {sum(r[1] for r in _rejected):,} samples '
+          f'({sum(r[1] for r in _rejected) / 3600:.2f} h)')
+
 rpm = np.concatenate([f['rpm'][f['cruise']] for f in DAYS])
 kt = np.concatenate([f['kt'][f['cruise']] for f in DAYS])
 lph = np.concatenate([f['lph'][f['cruise']] for f in DAYS])
@@ -159,35 +216,75 @@ l8 = q0 + q1 * rpm8 + q2 * rpm8 * rpm8
 print(f'  at 8 kt: {rpm8:.0f} rpm, {l8:.3f} L/h, {8/l8:.3f} NM/L')
 
 print('\nLOITER (800-1200 rpm)')
+# Collected as well as printed: model.json's idle burn is the median OF THE DAY
+# MEDIANS, so the day figures are the evidence and belong in the fit output
+# rather than being read off a console by hand.
+LOITER_MEDIANS, LOITER_RPMS, LOITER_HOURS = [], [], 0.0
 for f in DAYS:
     lo = f['loiter']
     if lo.sum() > 300:
-        print(f'  {f["day"]}: median {np.median(f["lph"][lo]):.2f} L/h at '
-              f'{np.median(f["rpm"][lo]):.0f} rpm, {lo.sum()/3600:.2f} h')
+        med, rpm_ = float(np.median(f['lph'][lo])), float(np.median(f['rpm'][lo]))
+        LOITER_MEDIANS.append(med)
+        LOITER_RPMS.append(rpm_)
+        LOITER_HOURS += lo.sum() / 3600
+        print(f'  {f["day"]}: median {med:.2f} L/h at {rpm_:.0f} rpm, '
+              f'{lo.sum()/3600:.2f} h')
+if LOITER_MEDIANS:
+    print(f'  across {len(LOITER_MEDIANS)} days: median of day medians '
+          f'{np.median(LOITER_MEDIANS):.2f} L/h, {LOITER_HOURS:.1f} h observed')
 
 print('\nGAUGE CALIBRATION (flow-meter litres per indicated point)')
-# Only days with material burn set the endpoints: an idle day's gauge wanders
-# +/-1-2 points on essentially zero fuel, and letting it anchor the combined
-# span moves the figure ~10% for no physical reason.
-active = []
+# Litres per point is a SLOPE measured down a drawdown, so it is only defined
+# while the level is falling. The moment the data contained refuels — 08-10T11
+# rose 15 points, 08-14 rose 39 — treating a day as one span produced a NEGATIVE
+# L/pt for the refuel day and a combined figure of 59 L/point against a true
+# ~2.06. So every day is now cut at each refill and calibrated within each
+# drawdown, and the combined figure sums litres and points over those spans
+# only. It never spans a refill, and never spans two days.
+#
+# Only spans with material burn count: an idle stretch's gauge wanders +/-1-2
+# points on essentially zero fuel, and letting one anchor the total moves the
+# figure ~10% for no physical reason.
+# The segmentation itself lives in tools/drawdown.py, so this script, the gauge
+# report and reserve_band.py cannot disagree about what a point is worth.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from drawdown import (GAUGE_MIN_L, GAUGE_MIN_PTS,  # noqa: E402
+                      drawdown_spans, litres_between)
+
+
+tot_l = tot_pts = 0.0
+band_lo, band_hi = 100.0, 0.0      # the gauge range the calibration actually saw
+SPANS = []                         # every usable drawdown, for the sigma below
 for f in DAYS:
     t, gas, lph_ = f['t'], f['gas'], f['lph']
-    dt = np.diff(t)
-    good = (dt > 0) & (dt < 30)
-    litres = float(np.sum(lph_[:-1][good] * dt[good]) / 3600)
-    g0_ = float(np.median(gas[t < t[0] + 600]))
-    g1_ = float(np.median(gas[t > t[-1] - 600]))
-    if litres < 2.0:
-        print(f'  {f["day"]}: {litres:5.1f} L — idle day, excluded from the calibration')
+    spans = drawdown_spans(t, gas)
+    used = []
+    for t0, t1, g0_, g1_ in spans:
+        litres = litres_between(t, lph_, t0, t1)
+        pts = g0_ - g1_
+        if litres < GAUGE_MIN_L or pts < GAUGE_MIN_PTS:
+            continue
+        used.append((litres, g0_, g1_, litres / pts))
+        tot_l += litres
+        tot_pts += pts
+        band_lo, band_hi = min(band_lo, g1_), max(band_hi, g0_)
+        SPANS.append({'day': f['day'], 'litres': litres, 'points': pts,
+                      'from_pct': g0_, 'to_pct': g1_, 'l_per_point': litres / pts})
+    if not used:
+        burned = litres_between(t, lph_, t[0], t[-1])
+        print(f'  {f["day"]}: {burned:5.1f} L — no usable drawdown '
+              f'({len(spans)} span(s)), excluded')
         continue
-    active.append((litres, g0_, g1_))
-    print(f'  {f["day"]}: {litres:5.1f} L over {g0_-g1_:.1f} pts '
-          f'({g0_:.0f}%->{g1_:.0f}%) = {litres/(g0_-g1_):.2f} L/pt')
-tot_l = sum(a[0] for a in active)
-g_start, g_end = (active[0][1], active[-1][2]) if active else (0.0, 0.0)
-if g_start - g_end > 1:
-    print(f'  combined: {tot_l:.1f} L over {g_start:.0f}%->{g_end:.0f}% '
-          f'= {tot_l/(g_start-g_end):.2f} L/point')
+    for litres, g0_, g1_, rate in used:
+        note = f'  {f["day"]}: {litres:5.1f} L over {g0_-g1_:4.1f} pts ' \
+               f'({g0_:.0f}%->{g1_:.0f}%) = {rate:.2f} L/pt'
+        print(note + ('   [1 of %d spans]' % len(used) if len(used) > 1 else ''))
+    if len(spans) > len(used):
+        print(f'      ({len(spans) - len(used)} span(s) too small to use)')
+
+if tot_pts > GAUGE_MIN_PTS:
+    print(f'  combined: {tot_l:.1f} L over {tot_pts:.1f} points of drawdown '
+          f'= {tot_l/tot_pts:.2f} L/point  (band {band_lo:.0f}%-{band_hi:.0f}%)')
 
 out = {
     'speed_vs_rpm': {'b': float(b0), 'm': float(b1), 'r2': float(r2s)},
@@ -197,9 +294,29 @@ out = {
     'cruise_hours': float(len(rpm) / 3600),
     'bins': [{'rpm': float(r), 'kt': float(k), 'lph': float(l), 'n': int(n)}
              for r, k, l, n in rows],
-    'gauge': {'litres': float(tot_l), 'band_pct': [float(g_end), float(g_start)],
-              'l_per_point': float(tot_l / (g_start - g_end))
-              if g_start - g_end > 1 else None},
+    # `points` is the sum of drawdown covered, NOT band_hi - band_lo: the spans
+    # are separate falls that may revisit the same part of the gauge, so the
+    # total travelled is the denominator and the band only says where it looked.
+    'gauge': {'litres': float(tot_l), 'points': float(tot_pts),
+              'band_pct': [float(band_lo), float(band_hi)],
+              'l_per_point': float(tot_l / tot_pts)
+              if tot_pts > GAUGE_MIN_PTS else None,
+              # Spread across the individual drawdowns, weighted by how much
+              # gauge each one covered — a 1-point span is not evidence on the
+              # same footing as a 9-point one. This is what model.json carries
+              # as l_per_point_sigma.
+              'l_per_point_sigma': (
+                  float(np.sqrt(np.average(
+                      [(s['l_per_point'] - tot_l / tot_pts) ** 2 for s in SPANS],
+                      weights=[s['points'] for s in SPANS])))
+                  if len(SPANS) > 1 else None),
+              'spans': SPANS},
+    'loiter': {
+        'per_day_lph': [float(x) for x in LOITER_MEDIANS],
+        'hours_observed': float(LOITER_HOURS),
+        'median_lph': float(np.median(LOITER_MEDIANS)) if LOITER_MEDIANS else None,
+        'rpm': float(np.median(LOITER_RPMS)) if LOITER_RPMS else None,
+    },
 }
 with open(CACHE / 'em2040_fit.json', 'w') as fh:
     json.dump(out, fh, indent=1)

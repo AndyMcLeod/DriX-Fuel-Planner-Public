@@ -334,36 +334,53 @@ class TestGondolas(unittest.TestCase):
                      Leg('survey', 'survey', 120.0, 8.0, 0.0),
                      Leg('home', 'transit', 25.0, 7.0, 180.0)]
 
-    # Measured MCAP-refit coefficients (6-day fit, 04-09 Aug 2026).
+    # Measured MCAP-refit coefficients (16-session fit, 04-15 Aug 2026).
     # These mirror model.json deliberately: if a refit changes the model and
-    # nobody updates them, this class fails and says so.
-    B2040M = 0.48606839462590734
-    M2040M = 0.003447858749954489
-    Q0, Q1, Q2 = 2.9364356362594624, -0.002970433167208108, 1.458113245924223e-06
+    # nobody updates them, this class fails and says so — which is exactly what
+    # it did at the Aug-15 refit.
+    B2040M = -0.4379785211023674
+    M2040M = 0.003909372453612787
+    Q0, Q1, Q2 = 3.1134559606365335, -0.002920141434656371, 1.3960663180683033e-06
 
     def test_em2040_known_points(self):
-        # 8 kt on the measured speed law is ~2172 rpm, inside the 1400-3100 window
+        # 8 kt on the measured speed law is ~2158 rpm, inside the 1280-3080 window
         r8 = self.m.rpm_for_speed(8.0, 'em2040')
-        self.assertAlmostEqual(r8, 2179.3, delta=0.5)
+        self.assertAlmostEqual(r8, 2158.4, delta=0.5)
         self.assertAlmostEqual(self.m.speed_for_rpm(2000, 'em2040'),
                                self.B2040M + self.M2040M * 2000, places=9)
         # the per-gondola quadratic fuel law
         want = self.Q0 + self.Q1 * r8 + self.Q2 * r8 * r8
         self.assertAlmostEqual(self.m.fuel_rate_lph(r8, 'em2040'), want, places=9)
-        self.assertAlmostEqual(want, 3.388, delta=0.002)
+        self.assertAlmostEqual(want, 3.314, delta=0.002)
         # em712 still uses the shared linear law
         r8e = self.m.rpm_for_speed(8.0, 'em712')
         self.assertAlmostEqual(self.m.fuel_rate_lph(r8e, 'em712'),
                                F0 + F1 * r8e, places=9)
 
     def test_em2040_window_is_its_own(self):
-        self.assertTrue(self.m.in_fit_window(2179, 'em2040'))
-        self.assertFalse(self.m.in_fit_window(1300, 'em2040'))
-        self.assertTrue(self.m.in_fit_window(1300, 'em712'))
+        self.assertTrue(self.m.in_fit_window(2158, 'em2040'))
+        # 1200 is below the EM2040's fitted floor (1280) and inside the EM712's,
+        # which is the point: each gondola answers for its own data.
+        self.assertFalse(self.m.in_fit_window(1200, 'em2040'))
+        self.assertTrue(self.m.in_fit_window(1200, 'em712'))
         self.assertFalse(self.m.in_fit_window(2616, 'em712'))
+        # ... and the EM2040 now reaches higher than the EM712 ever did.
+        self.assertTrue(self.m.in_fit_window(3000, 'em2040'))
+        self.assertFalse(self.m.in_fit_window(3000, 'em712'))
 
     def test_em2040_is_faster_at_equal_rpm(self):
-        for rpm in (1200, 1600, 2000, 2400):
+        """Only meaningful where BOTH laws have data — the overlap is
+        1280-2500 rpm.
+
+        The Aug-15 refit gave the EM2040 speed law a negative intercept, so
+        extended below its own window the two lines cross at about 1224 rpm and
+        the EM712 reads faster. That is two extrapolations meeting, not a
+        finding about drag, and comparing them there says nothing.
+        """
+        for rpm in (1300, 1600, 2000, 2400):
+            self.assertTrue(self.m.in_fit_window(rpm, 'em2040')
+                            and self.m.in_fit_window(rpm, 'em712'),
+                            f'{rpm} must be inside both windows for this to mean anything')
             self.assertGreater(self.m.speed_for_rpm(rpm, 'em2040'),
                                self.m.speed_for_rpm(rpm, 'em712'))
 
@@ -1228,7 +1245,9 @@ class TestLoiter(unittest.TestCase):
     def test_loiter_burns_the_measured_idle_rate(self):
         """Against arithmetic done outside the engine, from model.json."""
         lph = self.m.data['gondolas']['options']['em2040']['loiter']['lph']
-        self.assertEqual(lph, 0.95)
+        # Raised 0.95 -> 1.05 at the Aug-15 refit: 13 sessions of observed idle
+        # against 4, and nine of them at or above 1.00 L/h.
+        self.assertEqual(lph, 1.05)
         base = plan(self.legs, self.env, self._v(), self.m)
         held = plan(self._with_loiter(1, 3.0), self.env, self._v(), self.m)
         self.assertAlmostEqual(held.total_litres - base.total_litres,
@@ -2036,30 +2055,42 @@ class TestMaxSurveyLines(unittest.TestCase):
         self.assertIn('max_survey_length', str(ctx.exception))
 
     def test_parity_decides_the_last_line(self):
-        """The case the whole line model exists for, and the one a
-        distance-equivalent search gets wrong.
+        """The case the whole line model exists for: an odd count cannot
+        balance the wind premium, so the same distance costs more.
 
-        At 20 kt with 20 NM lines and 20 NM transits the answer is 16. The 17th
-        line runs INTO the wind and is the expensive one, so it breaches — even
-        though the same 340 NM flown as an even set of lines fits comfortably.
-        A solver that scaled the line length while holding an even count would
-        answer 17 here, and be wrong by a whole line.
+        Re-derived at the Aug-15 refit — the answer moved 16 -> 17 with the
+        curve, and the number was re-measured rather than re-typed. What is
+        asserted is the PROPERTY, which did not move: at one distance, the odd
+        set is dearer than the even one, and that difference is what the last
+        line turns on.
         """
         env = Environment(wmo_sea_state=2, wind_speed_kt=20.0, wind_from_deg=0.0)
         r = max_survey_lines(self._legs(lines=50, length=20.0), env, self.v, self.m)
-        self.assertEqual(r['lines'], 16)
+        self.assertEqual(r['lines'], 17)
+        self.assertEqual(r['lines'] % 2, 1, 'the binding answer here is an ODD count')
+
+        def margin(n, length=20.0):
+            return plan(self._legs(lines=n, length=length), env, self.v,
+                        self.m).binding_margin_litres
 
         def verdict(n, length=20.0):
             return plan(self._legs(lines=n, length=length), env, self.v,
                         self.m).verdict
 
-        self.assertEqual(verdict(16), 'ok')
-        self.assertNotEqual(verdict(17), 'ok')
-        # the reason is the DIRECTION of the 17th line, not the distance: the
-        # same 340 NM as an even set of lines still fits.
+        self.assertEqual(verdict(17), 'ok')
+        self.assertNotEqual(verdict(18), 'ok')
+
+        # The parity cost itself: 340 NM as 17 odd lines against the SAME 340 NM
+        # as 34 even ones. The even set keeps more fuel, and the gap is the extra
+        # line into the weather that has no reciprocal to pay for it.
+        odd = plan(self._legs(lines=17, length=20.0), env, self.v, self.m)
         even = plan(self._legs(lines=34, length=10.0), env, self.v, self.m)
+        self.assertAlmostEqual(odd.legs[1].distance_nm, 340.0, places=9)
         self.assertAlmostEqual(even.legs[1].distance_nm, 340.0, places=9)
-        self.assertEqual(even.verdict, 'ok')
+        self.assertLess(margin(17), even.binding_margin_litres,
+                        'the odd set must be the dearer of the two')
+        self.assertAlmostEqual(even.binding_margin_litres - odd.binding_margin_litres,
+                               3.41, delta=0.05)
 
     def test_the_line_length_is_not_changed_by_the_search(self):
         """This solver varies the COUNT; the geometry of a line is fixed by the

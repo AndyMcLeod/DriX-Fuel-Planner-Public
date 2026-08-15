@@ -55,20 +55,28 @@ shakedown data is the **EM2040**, the 2024 trials the much larger and
 heavier **EM712**. The planner carries both as selectable configurations.
 
 **Both gondolas now carry measured curves.** The EM2040 was refitted directly
-from six days of MCAP logs (04–09 Aug 2026, 4.85 h of steady cruise, flow meter
+from 16 MCAP sessions (04–15 Aug 2026, 131.9 h of steady cruise, flow meter
 vs the PLC thruster-RPM channel — the shaft RPM sensor was faulted throughout):
 
 | EM2040 (measured, Aug 2026) | |
 |---|---|
-| Fuel | `L/h = 2.9364 − 0.0029704·RPM + 1.4581e-6·RPM²` (R² 0.9995, 1400–3100 rpm) |
-| Speed | `kt = 0.4861 + 0.003448·RPM` (R² 0.956; SOG-based, ±5% tidal) |
-| At 8 kt | 2179 rpm · 3.39 L/h · **2.36 NM/L** (interpolation) |
-| Loiter | **0.95 L/h** at ~1005 rpm (20.8 h observed) |
+| Fuel | `L/h = 3.1135 − 0.0029201·RPM + 1.3961e-6·RPM²` (R² 0.993, 1280–3080 rpm) |
+| Speed | `kt = −0.4380 + 0.0039094·RPM` (R² 0.971; SOG-based, ±5% tidal) |
+| At 8 kt | 2158 rpm · 3.31 L/h · **2.41 NM/L** (interpolation) |
+| Loiter | **1.05 L/h** at ~1010 rpm (38.8 h observed) |
+
+The 15 August refit moved the curve where earlier ones had not — up to 11.8% in
+efficiency at 5 and 10 kt. That is the **ends** correcting rather than the middle
+moving: the previous fit was built on 1400–2500 rpm and extrapolated beyond it,
+while this one has measured data from 1279 to 3080 rpm. Against the binned
+medians, which neither law was fitted to, the new law is the better of the two
+(speed RMS 0.363 → 0.290 kt, fuel 0.142 → 0.115 L/h), and by the widest margin
+at exactly those extremes.
 
 The earlier transfer estimate (EM712 fuel law through the 2022 speed curve)
-predicted 2.50 NM/L at 8 kt — validated to ~6%. The EM712 at 8 kt is
-1.70 NM/L (extrapolated beyond its 1020–2500 rpm window), so the EM712 costs
-about **1.39×** the fuel per nautical mile at survey speed.
+predicted 2.50 NM/L at 8 kt — within ~4% of the measured 2.41. The EM712 at 8 kt
+is 1.68 NM/L (extrapolated beyond its 1020–2500 rpm window), so the EM712 costs
+about **1.43×** the fuel per nautical mile at survey speed.
 
 The refit also produced the first **direct gauge calibration**, since extended
 across every day with material burn: **2.06 ± 0.11 L per indicated point** over
@@ -143,7 +151,7 @@ they are for.
   but the needle does not: the banner goes red and reads **BREACHES ON THE
   GAUGE**, naming both bases. `within_reserve` keeps its capacity-only meaning.
   Spare range and time are quoted against `binding_margin_*` (whichever floor
-  binds first), and **`max_survey_length` solves to that same floor** (370.9 NM
+  binds first), and **`max_survey_length` solves to that same floor** (381.9 NM
   on the default vessel under reading A at sea state 2; 301.8 NM under B). A
   solver whose answer the planner then flags red would be a bug, and a test
   asserts it never happens.
@@ -356,7 +364,7 @@ Things happen at sea. Every leg takes a **`loiter_hours`**: time held on station
 making no way, entered in the UI in minutes or hours with `+15m` / `+1h` /
 `clear` buttons, and folded into the plan when you press **Plan mission** again.
 
-It is charged at the gondola's **measured idle burn** — 0.95 L/h for the EM2040,
+It is charged at the gondola's **measured idle burn** — 1.05 L/h for the EM2040,
 from 20.8 h of observed idle at ~1005 rpm — so a two-hour hold costs 1.9 L and
 two hours of clock.
 

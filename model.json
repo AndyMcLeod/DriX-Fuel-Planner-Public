@@ -1,7 +1,7 @@
 {
   "_about": "Derived coefficients for the DriX mission fuel planner. Every number here comes from DriX_fuel_efficiency_analysis.xlsx, which in turn derives from DriX_fuel_efficiency_raw_references.xlsx. Provenance is recorded per block. Values marked \"fitted\": true are regressions against measured data; values marked \"fitted\": false are assumptions and are editable in the UI.",
-  "version": "2.7.0",
-  "generated": "2026-08-09",
+  "version": "2.8.0",
+  "generated": "2026-08-15",
   "fuel_vs_rpm": {
     "_doc": "Primary fuel model. L/h = f0 + f1 * RPM. Fitted over the 2024 speed trials, 1020-2500 rpm, flow-meter measured. This is the workbook's preferred model: RPM predicts fuel at least as well as speed does.",
     "fitted": true,
@@ -43,34 +43,43 @@
       "em2040": {
         "label": "EM2040 gondola (currently fitted)",
         "status": "measured",
-        "status_note": "Refitted from 6 days of DriX-8 MCAP logs (04-09 Aug 2026), 4.85 h steady cruise, flow meter vs the PLC thruster-RPM channel (the shaft-RPM sensor is faulted throughout). Fuel law quadratic in RPM, valid 1400-3100 rpm; below ~1200 rpm use the loiter figure. Speed law is SOG-based and carries roughly +/-5% tidal uncertainty. The 2-day-wider evidence base moved efficiency by <=1% anywhere in 5-10 kt against the original 4-day fit, which is the strongest confirmation available that the curve is real.",
+        "status_note": "Refitted from 16 MCAP sessions (04-15 Aug 2026), 131.9 h of steady cruise, flow meter vs the PLC thruster-RPM channel (the shaft-RPM sensor is faulted throughout). Fuel law quadratic in RPM, valid 1280-3080 rpm; below ~1200 rpm use the loiter figure. Speed law is SOG-based and carries roughly +/-5% tidal uncertainty. THIS REFIT MOVED THE CURVE: up to 11.8% in efficiency at 5 and 10 kt, against <=1% for the previous one. That is the ENDS of the range correcting, not the middle moving — the old fit was built on 1400-2500 rpm and extrapolated beyond it, while this one has real data from 1279 to 3080 rpm. Checked against the measured bin medians, which neither law was fitted to: speed RMS 0.363 -> 0.290 kt, fuel RMS 0.142 -> 0.115 L/h, and the new law wins by most at exactly the two extremes (at 3080 rpm the old law was 0.63 kt slow, the new one 0.13). Two data faults were found and are now rejected by a guard in fit_em2040.py rather than by hand: 08-14 reported 12-14 L/h at 1889 rpm and 4.1 kt (4.6x the burn at those revs), and 08-15 reported 0.00 L/h while cruising.",
         "speed_vs_rpm": {
-          "b": 0.48606839462590734,
-          "m": 0.003447858749954489,
-          "r2": 0.9558079465339107,
-          "source": "MCAP refit, 6 days 04-09 Aug 2026, cruise segments (17,475 samples / 4.85 h)"
+          "b": -0.4379785211023674,
+          "m": 0.003909372453612787,
+          "r2": 0.9707954419023322,
+          "source": "MCAP refit, 16 sessions 04-15 Aug 2026, cruise segments (474,842 samples / 131.9 h)"
         },
         "fuel_vs_rpm": {
           "kind": "quadratic",
-          "q0": 2.9364356362594624,
-          "q1": -0.002970433167208108,
-          "q2": 1.458113245924223e-06,
-          "r2": 0.9994907370337567,
-          "valid_rpm_min": 1400,
-          "valid_rpm_max": 3100,
-          "source": "MCAP refit — flow meter vs thruster RPM, 6-day cruise bins"
+          "q0": 3.1134559606365335,
+          "q1": -0.002920141434656371,
+          "q2": 1.3960663180683033e-06,
+          "r2": 0.9932786748521548,
+          "valid_rpm_min": 1280,
+          "valid_rpm_max": 3080,
+          "source": "MCAP refit — flow meter vs thruster RPM, 16-session cruise bins spanning 1279-3080 rpm"
         },
         "loiter": {
-          "lph": 0.95,
-          "rpm": 1005,
-          "hours_observed": 20.8,
+          "lph": 1.05,
+          "rpm": 1010,
+          "hours_observed": 38.8,
           "per_day_lph": [
             0.85,
             0.95,
             0.95,
-            1.05
+            1.0,
+            1.0,
+            1.05,
+            1.05,
+            1.05,
+            1.05,
+            1.1,
+            1.15,
+            1.4,
+            1.5
           ],
-          "_doc": "Station-keeping/idle burn, median per day across 4 days with loiter time. Day medians span 0.85-1.05 L/h; 0.95 is the central value."
+          "_doc": "Station-keeping/idle burn, median per day across 13 sessions with loiter time. Raised from 0.95 to 1.05 at the Aug-15 refit: the four days behind 0.95 are still in here, and nine further sessions sit at or above 1.00. Day medians now span 0.85-1.50 L/h, so the spread is wider as well as higher — 1.05 is the median of the day medians, on 38.8 h observed against 20.8 h before."
         }
       },
       "em712": {
@@ -195,7 +204,7 @@
     "_doc": "Best measured efficiency was at the 1250 rpm step. Note the standard 8 kt survey speed needs about 2616 rpm, which is ABOVE the 2500 rpm fit ceiling — any leg at that speed is an extrapolation and the planner says so."
   },
   "gauge_calibration": {
-    "_doc": "Flow-meter litres per indicated gauge point, measured directly across days with material burn (idle days excluded - their gauge wanders on ~0 fuel). ESTABLISHED: the gauge SCALE is 2.06 +/- 0.11 L/point over the 72-86% band, and two independent methods agree - the DD2024 refuel (pumped litres) gives 2.09 and the 2022 telemetry drawdown 2.05. NOT ESTABLISHED: non-linearity. The per-day figures (2.21 / 2.40 / 1.66) separate by only 1.5 sigma; each day spans 4-5 points at about +/-18%. An earlier reading called that spread non-linearity; that was over-read and is retracted. THE 44 LITRE PROBLEM (2026-08-09): the drawings put the tank at 250 L, but 100 indicated points at 2.06 L/point is 206 L. All three measurements are SLOPES, so partial fills and partial drawdowns cannot explain the gap - those move a window along the gauge, they do not change what a point is worth. So roughly 44 L of the tank is not represented in the indicated range, and there are exactly two readings: (A) the gauge spans the tank and is non-linear, which forces the 86 unmeasured points to average 2.57 L/point, +25% on the measured band; or (B) the gauge covers only ~206 L and is linear, the other 44 L sitting below indicated zero or above indicated full. Mission fuel to the 25% floor is 185.7 L under (A) and 154.5 L under (B) - 31 L, 9.2 h and 74 NM apart. The planner uses (A); see gauge_profile.reading. Top-third data cannot separate them; one drawdown to the floor would, because the two predict burns 25% apart over a span that resolves to 1.3%. All calibration remains from the top third; the reserve band has no direct calibration at all. See docs/DriX8_Fuel_Gauge_Linearity.docx and tools/reserve_band.py.",
+    "_doc": "Flow-meter litres per indicated gauge point, measured directly across days with material burn (idle days excluded - their gauge wanders on ~0 fuel). ESTABLISHED: the gauge SCALE is 2.06 +/- 0.11 L/point over the 72-86% band, and two independent methods agree - the DD2024 refuel (pumped litres) gives 2.09 and the 2022 telemetry drawdown 2.05. NOT ESTABLISHED: non-linearity. The per-day figures (2.21 / 2.40 / 1.66) separate by only 1.5 sigma; each day spans 4-5 points at about +/-18%. An earlier reading called that spread non-linearity; that was over-read and is retracted. THE 44 LITRE PROBLEM (2026-08-09): the drawings put the tank at 250 L, but 100 indicated points at 2.06 L/point is 206 L. All three measurements are SLOPES, so partial fills and partial drawdowns cannot explain the gap - those move a window along the gauge, they do not change what a point is worth. So roughly 44 L of the tank is not represented in the indicated range, and there are exactly two readings: (A) the gauge spans the tank and is non-linear, which forces the 86 unmeasured points to average 2.57 L/point, +25% on the measured band; or (B) the gauge covers only ~206 L and is linear, the other 44 L sitting below indicated zero or above indicated full. Mission fuel to the 25% floor is 185.7 L under (A) and 154.5 L under (B) - 31 L, 9.2 h and 74 NM apart. The planner uses (A); see gauge_profile.reading. Top-third data cannot separate them; one drawdown to the floor would, because the two predict burns 25% apart over a span that resolves to 1.3%. All calibration remains from the top third; the reserve band has no direct calibration at all. See docs/DriX8_Fuel_Gauge_Linearity.docx and tools/reserve_band.py. AUG-15 REFIT, AND WHY THESE NUMBERS DID NOT MOVE: the 04-15 Aug data contains two refuels, so the gauge is no longer one drawdown; fit_em2040.py now cuts each session at every refill and calibrates within each fall, which yields 17 usable spans, 211.5 L over 90.3 indicated points, reaching 37% for the first time (everything before stopped at 72%). Pooled that is 2.34 L/point +/- 0.67 — but it is only 1.7 sigma from the 2.06 adopted here, and WITHIN the old 72-86% band the new spans read 1.85, i.e. lower rather than higher. Split by depth the spans read 1.85 shallow / 2.35 deep / 2.74 top, a 1.4-sigma trend. Both fall below the bar this file already used to RETRACT a non-linearity claim, so nothing here changed: the new data is consistent with 2.06 and does not resolve the 44 L question. What it does do is push the calibrated band down from 72% to 37%, most of the way to the 25% floor. The measurement that would settle it is unchanged: one continuous drawdown to the floor.",
     "fitted": true,
     "l_per_point": 2.06,
     "l_per_point_sigma": 0.11,

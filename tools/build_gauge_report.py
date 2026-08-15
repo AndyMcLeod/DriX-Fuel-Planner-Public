@@ -22,6 +22,8 @@ from docx_style import (new_document, check_table_widths,  # noqa: E402
                         build_date_str, INK, SOFT, ACCENT, WARN)
 from engine import Model as _EngModel  # noqa: E402
 from drawdown import spec as _drawdown_spec  # noqa: E402
+from drawdown import pooled_scale as _dd_pooled  # noqa: E402
+from drawdown import usable_spans as _dd_spans  # noqa: E402
 
 HERE = Path(__file__).parent
 CACHE = HERE / 'rosbags'
@@ -90,26 +92,61 @@ for p in sorted(CACHE.glob('2026-*.npz')):
     days.append(dict(day=p.stem, t=t, gas=gas, cum=cum, total=float(cum[-1]),
                      g0=float(np.median(gas[:600])), g1=float(np.median(gas[-600:]))))
 
-active = [d for d in days if d['total'] >= 2.0]
 idle = [d for d in days if d['total'] < 2.0]
 SIG_PTS = 0.7            # 1% quantisation -> ~0.5 pt per endpoint, 0.7 combined
-for d in active:
-    d['pts'] = d['g0'] - d['g1']
-    d['lpp'] = d['total'] / d['pts']
-    d['sig'] = d['lpp'] * SIG_PTS / d['pts']
 
-TOT = sum(d['total'] for d in active)
-G_HI = max(d['g0'] for d in active)
-G_LO = min(d['g1'] for d in active)
-PTS = G_HI - G_LO
-POOLED = TOT / PTS
-POOLED_SIG = POOLED * SIG_PTS / PTS
-lo_d = min(active, key=lambda d: d['lpp'])
-hi_d = max(active, key=lambda d: d['lpp'])
+# THE UNIT OF MEASUREMENT IS A DRAWDOWN, NOT A DAY. It used to be a day, because
+# the data happened to be one long fall; from 2026-08-15 it contains refuels, and
+# a day spanning one has no litres-per-point at all. tools/drawdown.py does the
+# cutting so this report, fit_em2040.py and reserve_band.py cannot disagree.
+SPANS = _dd_spans(CACHE)
+if not SPANS:
+    raise SystemExit('no usable drawdown in the caches — nothing to calibrate on')
+for s in SPANS:
+    s['lpp'], s['pts'], s['total'] = s['l_per_point'], s['points'], s['litres']
+    s['g0'], s['g1'] = s['from_pct'], s['to_pct']
+
+POOLED, SCATTER, TOT, PTS, G_LO, G_HI, N_SPANS = _dd_pooled(SPANS)
+# The pooled figure's own precision, from the spread BETWEEN spans rather than
+# from gauge quantisation on one of them: with 17 falls the quantisation is no
+# longer what limits the answer.
+POOLED_SIG = SCATTER / np.sqrt(N_SPANS)
+# Sessions whose gauge trace is worth drawing, largest burn first, capped so the
+# strip stays legible — 16 panels across one page is not a figure.
+active = sorted([d for d in days if d['total'] >= 2.0],
+                key=lambda d: -d['total'])[:6]
+active.sort(key=lambda d: d['day'])
+
+lo_d = min(SPANS, key=lambda s: s['lpp'])
+hi_d = max(SPANS, key=lambda s: s['lpp'])
 GAP = hi_d['lpp'] - lo_d['lpp']
 GAP_SIG = float(np.hypot(hi_d['sig'], lo_d['sig']))
 SIGMAS = GAP / GAP_SIG
 NOM_SIGMAS = (NOMINAL_LPP - POOLED) / POOLED_SIG
+
+# Is there a trend with DEPTH? That is what reading A predicts, and it is the
+# question the deeper 2026-08 spans could finally speak to.
+_deep = [s for s in SPANS if s['to_pct'] < 62]
+_shallow = [s for s in SPANS if s['to_pct'] >= 71 and s['from_pct'] <= 87]
+DEEP_LPP = (sum(s['litres'] for s in _deep) / sum(s['points'] for s in _deep)
+            if _deep else None)
+SHALLOW_LPP = (sum(s['litres'] for s in _shallow) / sum(s['points'] for s in _shallow)
+               if _shallow else None)
+# What the planner is actually configured with, read from the model rather than
+# restated here — §5.1 exists because this report's measurement and that value
+# are no longer the same number.
+_gc = _EngModel().data['gauge_calibration']
+ADOPTED_LPP = _gc['l_per_point']
+ADOPTED_SIG = _gc['l_per_point_sigma']
+ADOPTED_BAND = _gc['band_pct']
+
+if DEEP_LPP and SHALLOW_LPP:
+    _se = np.hypot(SCATTER / np.sqrt(max(len(_deep), 1)),
+                   SCATTER / np.sqrt(max(len(_shallow), 1)))
+    DEPTH_SIGMAS = abs(DEEP_LPP - SHALLOW_LPP) / _se
+else:
+    DEPTH_SIGMAS = None
+ADOPTED_SIGMAS = abs(POOLED - ADOPTED_LPP) / float(np.hypot(POOLED_SIG, ADOPTED_SIG))
 
 # ------------------------------------------------------------------- figures
 fig, axes = plt.subplots(1, len(active), figsize=(11, 3.1), sharey=True)
@@ -161,10 +198,12 @@ fig.savefig(FIGS / 'g2_calibration.png', facecolor='white')
 plt.close(fig)
 
 fig, ax = plt.subplots(figsize=(6.6, 3.6))
-labels = [f'{d["day"][5:]}\n{d["g1"]:.0f}-{d["g0"]:.0f}%' for d in active]
-vals = [d['lpp'] for d in active]
-errs = [d['sig'] for d in active]
-cols = [C_MEAS] * len(active)
+_bar = sorted(SPANS, key=lambda s: -s['points'])[:10]
+_bar.sort(key=lambda s: s['g0'])
+labels = [f'{s["day"][5:]}\n{s["g1"]:.0f}-{s["g0"]:.0f}%' for s in _bar]
+vals = [s['lpp'] for s in _bar]
+errs = [s['sig'] for s in _bar]
+cols = [C_MEAS] * len(_bar)
 labels.append(f'POOLED\n{G_LO:.0f}-{G_HI:.0f}%')
 vals.append(POOLED); errs.append(POOLED_SIG); cols.append(C_MODEL)
 x = np.arange(len(vals))
@@ -256,26 +295,37 @@ para('Two details do the work. Fuel rate is integrated over each day with gaps l
      'excluded, so a recording break cannot inflate the total. And each end of the gauge span is '
      'taken as a ten-minute median rather than a single reading, because the gauge is quantised '
      'to whole percent and bounces by a point or more as fuel moves in the tank.')
-para('Days burning less than 2 L are excluded from the calibration entirely. On an idle day the '
-     'gauge still wanders a point or two on essentially no fuel, and letting such a day anchor '
-     'one end of a span moves the answer by roughly a tenth for no physical reason.')
+para('Spans burning less than 2 L are excluded from the calibration entirely. On an idle stretch '
+     'the gauge still wanders a point or two on essentially no fuel, and letting one anchor an '
+     'end moves the answer by roughly a tenth for no physical reason.')
+callout('A drawdown, not a day',
+        'Litres per point is a slope down a FALLING level, so it is only defined while the level '
+        'falls. Until August 2026 the recorded data happened to be one long descent and each day '
+        'could be read end to end. It is not any more: the vehicle was refuelled twice inside the '
+        'record, once mid-session. Measured as whole days that yields a NEGATIVE litres-per-point '
+        'for a refuelled day and a pooled figure several times the truth. Every session is '
+        f'therefore cut at each refill, and the {N_SPANS} falling stretches below are the '
+        'measurements. None spans a refill; none spans two sessions.')
 
-table(['Day', 'Metered litres', 'Gauge span', 'Points', 'L per point', 'Uncertainty'],
-      [[d['day'], f'{d["total"]:.2f}', f'{d["g1"]:.0f}–{d["g0"]:.0f}%',
-        f'{d["pts"]:.0f}', f'{d["lpp"]:.2f}', f'± {d["sig"]:.2f}'] for d in active]
-      + [['POOLED', f'{TOT:.1f}', f'{G_LO:.0f}–{G_HI:.0f}%', f'{PTS:.0f}',
-          f'{POOLED:.2f}', f'± {POOLED_SIG:.2f}']]
-      + [[d['day'], f'{d["total"]:.2f}', '—', '—', 'idle — excluded', '—'] for d in idle],
-      [1.05, 1.15, 1.05, 0.7, 1.05, 1.05],
-      note='Table 1 — Every cached day. Uncertainty is dominated by the gauge span: a '
-           'ten-minute median of a 1%-quantised signal still carries about ±0.5 point at each '
-           'end, so ±0.7 on the difference. A day spanning only four points therefore carries '
-           'about ±18% on its litres-per-point, which is the crux of section 5.')
+table(['Session', 'Metered litres', 'Gauge span', 'Points', 'L per point', 'Uncertainty'],
+      [[s['day'], f'{s["total"]:.2f}', f'{s["g1"]:.0f}–{s["g0"]:.0f}%',
+        f'{s["pts"]:.1f}', f'{s["lpp"]:.2f}', f'± {s["sig"]:.2f}']
+       for s in sorted(SPANS, key=lambda s: -s['points'])]
+      + [['POOLED', f'{TOT:.1f}', f'{G_LO:.0f}–{G_HI:.0f}%', f'{PTS:.1f}',
+          f'{POOLED:.2f}', f'± {POOLED_SIG:.2f}']],
+      [1.15, 1.15, 1.0, 0.65, 1.0, 1.05],
+      note=f'Table 1 — Every usable drawdown, largest first. The pooled row divides total litres '
+           f'by total drawdown TRAVELLED ({PTS:.1f} points), not by the width of the band it '
+           f'covers: the spans are separate falls that revisit the same part of the gauge, so the '
+           f'band only says where the measurement looked. Its uncertainty is the spread BETWEEN '
+           f'spans rather than gauge quantisation on any one of them — with {N_SPANS} falls, '
+           f'quantisation is no longer what limits the answer.')
 
 figure('g1_traces.png',
-       'Figure 1 — The raw evidence, one panel per operating day. The gauge (blue) descends in '
-       'visible 1% steps with bounce at each transition; metered fuel (red) rises smoothly. The '
-       'staircase against the ramp is the entire measurement.', width=6.4)
+       'Figure 1 — The raw evidence, one panel per operating session (the six with the largest '
+       'burn). The gauge (blue) descends in visible 1% steps with bounce at each transition; '
+       'metered fuel (red) rises smoothly. The staircase against the ramp is the entire '
+       'measurement.', width=6.4)
 
 # ---- 3
 doc.add_heading('3.  The calibration curve', level=1)
@@ -318,24 +368,48 @@ para(f'The two sources that measure real litres — the DD2024 refuel and the fl
 
 # ---- 5
 doc.add_heading('5.  Is the gauge non-linear? Not established.', level=1)
-para('The three operating days each cover a different band, and their litres-per-point differ: '
-     + ', '.join(f'{d["lpp"]:.2f} over {d["g1"]:.0f}–{d["g0"]:.0f}%' for d in active)
-     + '. Read quickly, that looks like the gauge changing scale down the tank — and an earlier '
-       'pass over these same days recorded it as exactly that.')
-para('It does not survive an error analysis.')
+para(f'Each drawdown covers a different band, and their litres-per-point differ widely — from '
+     f'{lo_d["lpp"]:.2f} over {lo_d["g1"]:.0f}–{lo_d["g0"]:.0f}% to {hi_d["lpp"]:.2f} over '
+     f'{hi_d["g1"]:.0f}–{hi_d["g0"]:.0f}%. Read quickly, that looks like the gauge changing scale '
+     f'down the tank — and an earlier pass over the first few days recorded it as exactly that.')
+para('It does not survive an error analysis, and the August 2026 data is the first that can put '
+     'the question properly rather than merely restate it.')
 figure('g3_lpp.png',
-       'Figure 3 — The same per-day figures with their uncertainties. Every bar overlaps its '
-       'neighbours. The pooled value (red) is tight because it spans three times as many points.')
+       'Figure 3 — The individual drawdowns with their uncertainties, the ten widest shown. Every '
+       'bar overlaps its neighbours. The pooled value (red) is tight because it rests on the whole '
+       'travelled drawdown rather than one fall.')
 mono(f'widest gap:  {hi_d["lpp"]:.2f} − {lo_d["lpp"]:.2f}  =  {GAP:.2f} L/pt\n'
      f'combined 1σ: {GAP_SIG:.2f}\n'
-     f'separation:  {SIGMAS:.1f} σ   →  not significant',
-     'Each day spans only four or five indicated points, so the ±0.7 point uncertainty on a span '
-     'becomes roughly ±18% on that day\'s litres-per-point.')
-para(f'A {SIGMAS:.1f} sigma separation is what random noise produces routinely. The per-day '
-     f'spread is therefore consistent with measurement scatter, and it is not evidence of '
-     f'non-linearity. Pushing to finer resolution makes this worse rather than better: computing '
-     f'litres for each individual gauge point gives values ranging from about 0.2 to 5.0 L — a '
-     f'scatter larger than the quantity being measured.')
+     f'separation:  {SIGMAS:.1f} σ   →  the SCATTER is real; its CAUSE is the question',
+     f'Comparing the extremes of {N_SPANS} falls is not a test of non-linearity — the widest gap '
+     f'in a sample that size is wide by construction. What it does establish is that the spread '
+     f'between drawdowns exceeds what gauge quantisation alone would produce, so something '
+     f'physical drives it. Depth is only one candidate, and the next block tests that one '
+     f'directly.')
+if DEPTH_SIGMAS is not None:
+    para('The sharper test is no longer span against span but SHALLOW against DEEP, because the '
+         'record now reaches far enough down the tank to ask it. Reading A predicts that points '
+         'below the calibrated band are worth MORE litres than those inside it, so a deep '
+         'drawdown should read higher:')
+    mono(f'shallow (72–86%):  {SHALLOW_LPP:.2f} L/pt   over {len(_shallow)} falls\n'
+         f'deep (below 62%):  {DEEP_LPP:.2f} L/pt   over {len(_deep)} falls\n'
+         f'separation:        {DEPTH_SIGMAS:.1f} σ   →  '
+         f'{"not significant" if DEPTH_SIGMAS < 2 else "SIGNIFICANT — revisit reading A"}',
+         'The deep spans are the ones that did not exist before August 2026; everything earlier '
+         'stopped at 72%.')
+    para(f'The deep band does read higher, in the direction reading A predicts — but at '
+         f'{DEPTH_SIGMAS:.1f} sigma that is not a result, it is the same size of difference this '
+         f'report already retracted once. Suggestive is not established, and the distinction is '
+         f'the entire subject of this document.')
+para('So the two results point in different directions, and both belong in the record. The scatter '
+     'between drawdowns is larger than quantisation explains, which says a real effect is at work '
+     '— sloshing and trim while under way, sender hysteresis, and temperature are all candidates '
+     'this data cannot separate. But that scatter is NOT organised by depth, which is what '
+     'non-linearity would look like. A real effect that is not the one under test does not '
+     'establish the one under test.')
+para('Pushing to finer resolution makes this worse rather than better: computing litres for each '
+     'individual gauge point gives values ranging from about 0.2 to 5.0 L — a scatter larger than '
+     'the quantity being measured.')
 
 para('None of this disproves non-linearity — a float sender in a tank that is not a uniform prism '
      'has every physical reason to be non-linear, and the DD2024 whole-range figure sitting close '
@@ -343,12 +417,40 @@ para('None of this disproves non-linearity — a float sender in a tank that is 
      'is that the effect, if present, is smaller than this measurement can resolve.')
 
 callout('Correction to the earlier record',
-        'A previous analysis of these days recorded the per-day spread as demonstrating '
+        'A previous analysis of the first few days recorded the per-day spread as demonstrating '
         'non-linearity, and that statement propagated into the model file and the project notes. '
-        'It was over-read. The correct position: the gauge SCALE is firmly established as '
-        f'{POOLED:.2f} L per point over the measured band, well below nominal; the question of '
-        'whether that scale varies with level is open, and this data cannot close it. The model '
-        'file and notes have been corrected to say so.', WARN)
+        'It was over-read. The correct position: the gauge SCALE is firmly established as well '
+        'below nominal; the question of whether that scale varies with level is open, and this '
+        'data cannot close it. The model file and notes have been corrected to say so.', WARN)
+
+doc.add_heading('5.1  What this measures, and what the planner uses', level=2)
+para(f'These are not the same number, and the difference is deliberate. This report measures '
+     f'{POOLED:.2f} ± {POOLED_SIG:.2f} L per point over {G_LO:.0f}–{G_HI:.0f}%. The planner is '
+     f'still configured with {ADOPTED_LPP:.2f} L per point over '
+     f'{ADOPTED_BAND[0]:.0f}–{ADOPTED_BAND[1]:.0f}%, which is what every fuel figure in the '
+     f'companion report and every plan the tool produces rests on.')
+table(['', 'L per point', 'Band', 'Evidence'],
+      [['Adopted in model.json', f'{ADOPTED_LPP:.2f} ± {ADOPTED_SIG:.2f}',
+        f'{ADOPTED_BAND[0]:.0f}–{ADOPTED_BAND[1]:.0f}%', '26.7 L over 13 points'],
+       ['Measured here', f'{POOLED:.2f} ± {POOLED_SIG:.2f}',
+        f'{G_LO:.0f}–{G_HI:.0f}%', f'{TOT:.0f} L over {PTS:.0f} points'],
+       ['Measured here, restricted to the adopted band',
+        f'{SHALLOW_LPP:.2f}' if SHALLOW_LPP else '—', '72–86%',
+        f'{len(_shallow)} falls' if _shallow else '—']],
+      [1.9, 1.15, 1.0, 1.5], right_from=99,
+      note=f'Table 5 — The pooled figure sits {ADOPTED_SIGMAS:.1f} sigma from the adopted one, '
+           f'which is below the bar this report uses everywhere else. Restricted to the SAME band '
+           f'the adopted figure was measured over, the new data reads lower, not higher.')
+para(f'The reasoning for leaving it alone: the two differ by {ADOPTED_SIGMAS:.1f} sigma, which is '
+     f'the same size of difference section 5 has just declined to call a finding; within the '
+     f'adopted band the new spans read {SHALLOW_LPP:.2f}, on the other side of it; and the '
+     f'direction of the change is the unsafe one — a larger litres-per-point means each indicated '
+     f'point is worth more fuel, so every mission would be planned longer. A number that moves '
+     f'planning that way should clear the bar, not sit under it.')
+para('What the new data does change is reach. Every calibration before August 2026 came from the '
+     f'top third of the gauge; these drawdowns reach {G_LO:.0f}%, which is most of the way to the '
+     f'{RES_PCT:.0f}% floor. The band below the floor remains uncalibrated, and the experiment in '
+     'section 7 is unchanged.')
 
 # ---- 6
 doc.add_heading('6.  What the reserve is actually worth', level=1)

@@ -18,14 +18,23 @@ OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (
     Path(__file__).resolve().parent.parent / 'docs' / 'DriX8_Endurance_EM2040.xlsx')
 
 # Through-origin variants of the measured EM2040 laws, refitted from the same
-# cruise bins (tools/em2040_fit_2026-08-09.json) plus the 0.95 L/h loiter
-# anchor, constrained so 0 rpm -> 0 L/h and 0 kt EXACTLY. This is the physics
-# of the drivetrain: direct drive, shaft rpm = engine rpm (the trawling motor
-# is no longer used), so zero shaft rpm means the engine is stopped.
-# Agreement with the primary in-band laws (model.json, used by the planner):
-# <= 3.7% across the 1400-3100 rpm window and 0.3% at 8 kt.
+# cruise bins as the planner's laws plus the measured loiter anchor, constrained
+# so 0 rpm -> 0 L/h and 0 kt EXACTLY. This is the physics of the drivetrain:
+# direct drive, shaft rpm = engine rpm (the trawling motor is no longer used),
+# so zero shaft rpm means the engine is stopped.
+#
+# ⚠ THIS READS THE LIVE FIT, and it did not always. Until 2026-08-15 it loaded a
+# dated snapshot (em2040_fit_2026-08-09.json), so the 16-session refit rebuilt
+# every other document while this sheet came out BYTE-IDENTICAL — the ops-facing
+# table silently pinned to superseded coefficients. It was caught by `git status`
+# showing the .xlsx modified and the .csv beside it untouched, which is only
+# possible if the numbers never moved. Read the live file, or a refit does not
+# reach the sheet an operator actually carries.
 import numpy as np
-FIT = json.load(open(Path(__file__).with_name('em2040_fit_2026-08-09.json')))
+_LIVE = Path(__file__).with_name('rosbags') / 'em2040_fit.json'
+if not _LIVE.exists():
+    raise SystemExit(f'{_LIVE} missing — run tools/fit_em2040.py first')
+FIT = json.load(open(_LIVE))
 # Gauge scale read from the model file so this sheet's footnote cannot drift
 # from the planner. (encoding='utf-8' on purpose — this machine defaults to
 # cp1252 and silently mojibakes the em-dashes in model.json.)
@@ -43,13 +52,36 @@ _R = np.array([b['rpm'] for b in FIT['bins']])
 _K = np.array([b['kt'] for b in FIT['bins']])
 _L = np.array([b['lph'] for b in FIT['bins']])
 _W = np.array([min(b['n'], 3600) for b in FIT['bins']], float)
-_Rf = np.append(_R, 1005.0)                      # loiter anchor (measured)
-_Lf = np.append(_L, 0.95)
+# The loiter anchor is read, not written out: it moved 0.95 -> 1.05 at the
+# Aug-15 refit and a hardcoded copy here would have pulled the whole
+# through-origin curve toward a burn the vehicle no longer has.
+_LOITER = _M['gondolas']['options']['em2040']['loiter']
+_Rf = np.append(_R, _LOITER['rpm'])              # loiter anchor (measured)
+_Lf = np.append(_L, _LOITER['lph'])
 _Wf = np.append(_W, 3600.0)
 _A = np.vstack([_Rf, _Rf ** 2, _Rf ** 3]).T
 _Wm = np.diag(_Wf)
 A1, A2, A3 = np.linalg.solve(_A.T @ _Wm @ _A, _A.T @ _Wm @ _Lf)
 SM0 = float(np.sum(_W * _R * _K) / np.sum(_W * _R * _R))   # kt = SM0 * rpm
+
+# How far these through-origin variants sit from the planner's own laws, MEASURED
+# rather than asserted. It used to be a sentence claiming "<= 3.7% in-window,
+# 0.3% at 8 kt" — true of one fit and quietly wrong after any other.
+_G2040 = _M['gondolas']['options']['em2040']
+_PS, _PF = _G2040['speed_vs_rpm'], _G2040['fuel_vs_rpm']
+_win = np.arange(_PF['valid_rpm_min'], _PF['valid_rpm_max'] + 1, 10.0)
+_prim = _PF['q0'] + _PF['q1'] * _win + _PF['q2'] * _win ** 2
+_thru = A1 * _win + A2 * _win ** 2 + A3 * _win ** 3
+_dev = np.abs(_thru / _prim - 1.0) * 100
+_AGREE_MAX = float(np.max(_dev))
+_AGREE_AT = float(_win[int(np.argmax(_dev))])
+# Where it settles: the through-origin constraint pulls hardest at the bottom of
+# the window, toward the loiter anchor, and is negligible over the rest.
+_above = _win > 1600
+_AGREE_REST = float(np.max(_dev[_above])) if _above.any() else _AGREE_MAX
+_r8 = (8.0 - _PS['b']) / _PS['m']
+_AGREE_8KT = abs((A1 * _r8 + A2 * _r8 ** 2 + A3 * _r8 ** 3)
+                 / (_PF['q0'] + _PF['q1'] * _r8 + _PF['q2'] * _r8 ** 2) - 1.0) * 100
 
 
 def lph_at(rpm):
@@ -118,12 +150,15 @@ ws['B16'] = 250.0
 ws['B16'].font = BODY
 
 prov = [
-    f'Source: DriX-8 MCAP logs 04-09 Aug 2026 (EM2040 fitted) — {FIT["cruise_hours"]:.2f} h '
-    f'steady cruise, flow meter vs thruster RPM.',
-    f'Fuel law (through origin) L/H = {A1:.4e}·RPM {A2:+.4e}·RPM² {A3:+.4e}·RPM³  (R² 0.9996),',
-    'anchored by (0,0) and the measured 0.95 L/H station-keeping figure at ~1005 rpm.',
-    f'Speed law (through origin) KNOTS = {SM0:.6f}·RPM  (R² 0.949; SOG-based, ±5-8% tidal).',
-    'Both agree with the primary in-band laws (planner model.json) to ≤3.7% in-window, 0.3% at 8 kt.',
+    f'Source: DriX-8 MCAP logs (EM2040 fitted) — {FIT["cruise_hours"]:.2f} h '
+    f'steady cruise over {_R.min():.0f}-{_R.max():.0f} rpm, flow meter vs thruster RPM.',
+    f'Fuel law (through origin) L/H = {A1:.4e}·RPM {A2:+.4e}·RPM² {A3:+.4e}·RPM³,',
+    f'anchored by (0,0) and the measured {_LOITER["lph"]:.2f} L/H station-keeping figure '
+    f'at ~{_LOITER["rpm"]:.0f} rpm.',
+    f'Speed law (through origin) KNOTS = {SM0:.6f}·RPM  (SOG-based, ±5-8% tidal).',
+    f'Against the planner\'s own laws (model.json): {_AGREE_8KT:.1f}% at 8 kt, '
+    f'≤{_AGREE_REST:.1f}% above 1600 rpm, worst {_AGREE_MAX:.1f}% at '
+    f'{_AGREE_AT:.0f} rpm where the through-origin constraint bends toward idle.',
     'Drivetrain: direct drive, shaft rpm = engine rpm (trawling motor unused). 0 rpm = engine OFF = 0 L/H.',
     'The engine idles at ~1000 rpm (≈0.95 L/H — the 1000 row) and engages at ~1100 minimum:',
     'the 0-1000 rpm band is not an operating region; the curve merely passes through it.',
