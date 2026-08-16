@@ -292,6 +292,14 @@ out = {
                               'r2': float(r2f)},
     'rpm_range': [float(R.min()), float(R.max())],
     'cruise_hours': float(len(rpm) / 3600),
+    # What the physics guard removed. Recorded so the methods document quotes it
+    # from here rather than carrying its own copy — the guard's effect is a
+    # finding about the instrument, and a finding stated twice can disagree.
+    'guard': {'mad': GUARD_MAD, 'bin_rpm': GUARD_BIN,
+              'rejected': int(sum(r[1] for r in _rejected)),
+              'pool': int(len(rpm)),
+              'by_day': [{'day': d, 'rejected': n, 'of': of,
+                          'median_lph': med} for d, n, of, med in _rejected]},
     'bins': [{'rpm': float(r), 'kt': float(k), 'lph': float(l), 'n': int(n)}
              for r, k, l, n in rows],
     # `points` is the sum of drawdown covered, NOT band_hi - band_lo: the spans

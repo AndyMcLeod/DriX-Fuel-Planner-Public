@@ -246,6 +246,56 @@ reading is worth 31 L.
    all four builders now share it, and all three Word documents came out
    byte-identical, so none was regenerated. See "Document builders" below.
 
+## What the PLC's own fault flags say (2026-08-15)
+
+`tools/fault_scan.py` sweeps every decodable segment for STATE CHANGES on the 40
+fault, alarm and detector booleans in Telemetry3, and caches
+`tools/rosbags/fault_events.json`, which the methods doc reads for §2.1, §4.3
+and §4.4. Edges, not samples: how many samples are faulted is a function of how
+long the boat ran; how many times a flag asserts is a property of the sensor.
+
+**948 transitions over 1,396,577 samples, 16 sessions, and only TWO fields ever
+left normal.**
+
+- **`shaft_sensor_rpm_fault` — 473 assertions across 10 of 16 sessions.** The
+  fault the pipeline already routes around, now timestamped and shown to be
+  INTERMITTENT rather than dead: it asserts and clears repeatedly, which is why
+  a snapshot of the channel can look healthy. That is the argument for reading
+  `thruster_rpm` outright rather than filtering this one.
+- **`water_in_engine_compartment` — one transition, 08-14 15:07:11Z, cleared one
+  second later.** A single sample. It reads as a sensor blip ONLY because the
+  clearing edge was captured next to the assertion; recording assertions alone
+  would have made it look like water in the bilge.
+
+**⚠ THE FUEL ALARMS NEVER FIRED, AND THAT IS A BOUND, NOT A REASSURANCE.** All
+six fuel booleans held false throughout — including at **34% indicated, 08-14
+13:41:40Z**, the deepest drawdown in the record, immediately before a refuel. So
+the low-level threshold is somewhere below 34%, i.e. **under the reserve band
+this planner works in — the PLC would not warn an operator at the floor**, and
+the gauge-denominated verdict is doing that alone. It also does not show the
+alarm WORKS: never leaving false across 1.4 M samples fits a correctly armed
+alarm with no reason to fire and a dead one equally.
+
+**And the fault flags do NOT mark either flow-meter fault** (08-14's 12–14 L/h,
+08-15's 0.00 L/h) — the PLC never considered the meter unhealthy, which is
+exactly why the physics guard in §4.3 compares a sample against other sessions
+instead of trusting a health bit.
+
+**There is no fuel solenoid or cut-off valve anywhere in the bags.** The only
+valve in the message set is a SEA-WATER one, and `has_sea_water_valve` reads
+false on this hull, so all six `sea_water_valve_*` fields are inert rather than
+failed. The 63 electronic-breaker channels carry current and voltage but are
+identified by `channel_id` with **no names**, so a solenoid wired to one is
+recorded but unidentifiable without the electrical drawings. The 9 digital
+outputs ARE named (bilge pumps, USBL power, SVP winch, smoke detectors, one
+'Spare') and none is a fuel valve.
+
+**Running it:** ~45 min over the full set, checkpointed per session so a kill
+costs one session. **Do not run it alongside another decode** — the first
+attempt was killed at exit 255 with no traceback while a second MCAP reader was
+working the same bags, and lost all 304 events it had found because it only
+wrote at the end.
+
 ## The ops sheet was pinned to a dead fit (2026-08-15)
 
 `build_endurance_sheet.py` loaded `tools/em2040_fit_2026-08-09.json` — a dated

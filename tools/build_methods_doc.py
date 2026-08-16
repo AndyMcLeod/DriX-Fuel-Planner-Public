@@ -9,7 +9,9 @@ numbers are produced — extraction, segmentation, binning, fitting, and the
 derived quantities. Every figure is READ from the fit JSON and the caches, so
 this document cannot drift from the pipeline that made it.
 """
+import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -65,6 +67,54 @@ from engine import Model as _EngModel  # noqa: E402
 # code the way a hand-typed one would. Nothing here reads the network or needs a
 # cached cycle: a fresh clone builds this document.
 import currents as ofs  # noqa: E402
+
+# §2.1, §4.3 and §4.4 read the fault sweep (tools/fault_scan.py) and the guard's
+# own constants, so the sensor-health figures in this document are derived from
+# the bags rather than typed. A missing sweep is not fatal — the document still
+# builds, and says the sweep has not been run.
+_FS_PATH = CACHE / 'fault_events.json'
+_FS = json.load(open(_FS_PATH)) if _FS_PATH.exists() else None
+if _FS is None:
+    raise SystemExit(f'{_FS_PATH} missing — run tools/fault_scan.py first '
+                     f'(§2.1 and §4.4 quote it)')
+_FS_FIELDS = _FS['fields']
+_FS_SAMPLES = max(_FS['counts'].values())
+_FS_NSESS = len(_FS['sessions'])
+_shaft = [e for e in _FS['events'] if e['field'] == 'shaft_sensor_rpm_fault' and e['to']]
+_SHAFT_N = len(_shaft)
+_by = {}
+for _e in _shaft:
+    _by[_e['session']] = _by.get(_e['session'], 0) + 1
+_SHAFT_BY_SESSION = sorted(_by.items())
+_SHAFT_SESS = len(_by)
+_water = [e for e in _FS['events'] if e['field'] == 'water_in_engine_compartment'
+          and e['to']]
+_WATER_TS = (dt.datetime.fromtimestamp(_water[0]['ts'] / 1e9, dt.timezone.utc)
+             .strftime('%Y-%m-%d %H:%M:%S')) if _water else 'never'
+
+# The guard's own thresholds and its effect, read from the fitter rather than
+# restated: a number quoted in two places is a number free to disagree.
+if 'guard' not in FIT:
+    raise SystemExit('em2040_fit.json predates the physics guard — re-run '
+                     'tools/fit_em2040.py so §4.3 can quote it')
+GUARD_MAD = FIT['guard']['mad']
+_GUARD_REJ = FIT['guard']['rejected']
+_GUARD_TOT = FIT['guard']['pool'] + _GUARD_REJ
+_GUARD_H = _GUARD_REJ / 3600.0
+
+# The deepest drawdown, for the fuel-alarm bound in §4.4.
+_gas = []
+for _p in sorted(CACHE.glob('2026-*.npz')):
+    _z = np.load(_p)
+    if 'vs_gas_pct' in _z.files and len(_z['vs_gas_pct']):
+        _g = _z['vs_gas_pct'].astype(float)
+        _t = _z['vs_t'].astype(float)
+        _i = int(np.argmin(_g))
+        _gas.append((float(_g[_i]), float(_t[_i])))
+_LOW_PCT, _low_t = min(_gas) if _gas else (0.0, 0.0)
+_LOW_PCT = int(round(_LOW_PCT))
+_LOW_TS = dt.datetime.fromtimestamp(_low_t, dt.timezone.utc).strftime(
+    '%Y-%m-%d %H:%M:%S')
 _ENG = _EngModel()
 _RES_PCT = MODEL['reserve']['default_fraction'] * 100.0
 _MISSION_L = _ENG.gauge_profile.litres_between(_RES_PCT, 100.0)
@@ -140,11 +190,26 @@ table(['Topic', 'Message type', 'Fields consumed', 'Used for'],
 
 doc.add_heading('2.1  Why thruster_rpm and not shaft_sensor_rpm', level=2)
 para('Telemetry3 publishes a shaft RPM sensor reading, which would be the natural choice. It is '
-     'faulted throughout the recorded period — reading zero or 65527 — so the PLC\'s '
-     'thruster_rpm from vehicle_status is used instead. This is sound rather than a compromise: '
-     'the DriX-8 drivetrain is direct drive, so shaft RPM equals engine RPM (the sole exception, '
-     'the trawling motor, is no longer used). The extraction still records the faulted channel '
-     'so the fault remains visible in the cache.')
+     'faulted — reading zero or 65527 — so the PLC\'s thruster_rpm from vehicle_status is used '
+     'instead. This is sound rather than a compromise: the DriX-8 drivetrain is direct drive, so '
+     'shaft RPM equals engine RPM (the sole exception, the trawling motor, is no longer used). '
+     'The extraction still records the faulted channel so the fault remains visible in the cache.')
+para(f'The vehicle says so itself, and the claim is now measured rather than asserted. '
+     f'Telemetry3 carries a shaft_sensor_rpm_fault flag; sweeping every decodable segment for '
+     f'STATE CHANGES on it — {_FS_SAMPLES:,} samples across {_FS_NSESS} recording sessions — the '
+     f'flag asserts {_SHAFT_N} times in {_SHAFT_SESS} of them.')
+table(['Session', 'Assertions'],
+      [[s, f'{n}'] for s, n in _SHAFT_BY_SESSION]
+      + [['total', f'{_SHAFT_N} across {_SHAFT_SESS} sessions']],
+      [2.2, 1.4], right_from=1,
+      note='Table 3 — Times the shaft-RPM fault flag went true, by session. Counted as EDGES, '
+           'not samples: how many samples are faulted is a function of how long the vehicle ran, '
+           'while how many times the flag asserts is a property of the sensor.')
+para('The shape of that is worth more than the total. The fault is INTERMITTENT — it asserts and '
+     'clears repeatedly within a session rather than latching — which is why a reader looking at '
+     'a single snapshot of the channel can find it apparently healthy. A dead channel would be '
+     'easier to notice and no worse to work around; a flickering one that is sometimes plausible '
+     'is exactly the case for reading a different channel outright rather than filtering this one.')
 
 doc.add_heading('2.2  Topics deliberately not used', level=2)
 bullets([
@@ -197,7 +262,7 @@ table(['Condition', 'Threshold', 'Why'],
        ['Making way', 'sog > 1.5 m/s', 'Excludes station-keeping'],
        ],
       [1.35, 1.6, 3.3],
-      note='Table 3 — Cruise criteria. Course unwrapping matters: without it a heading crossing '
+      note='Table 4 — Cruise criteria. Course unwrapping matters: without it a heading crossing '
            '360° reads as a 360° excursion and every northerly leg would be discarded.')
 
 doc.add_heading('4.2  Loiter', level=2)
@@ -206,6 +271,68 @@ para('Station-keeping is retained separately — engine on, 800–1200 rpm, fuel
      'loaded quite differently and the vehicle is not making way, so including it would bend the '
      'cruise curve toward a regime it does not describe. It is reported on its own as the idle '
      'and station-keeping burn.')
+
+doc.add_heading('4.3  The physics guard — when the flow meter itself lies', level=2)
+para('Everything above assumes the flow meter is telling the truth. In August 2026 it twice did '
+     'not, and neither fault was visible to the criteria in §4.1: the readings were steady, '
+     'straight and fast enough to look like textbook cruise. Both were caught only by comparing a '
+     'sample against what the same engine speed burns everywhere else.')
+table(['Session', 'Symptom', 'Where', 'Character'],
+      [['2026-08-14', '12–14 L/h at 1889 rpm and 4.1 kt',
+        '19:27–19:55Z and 19:58–20:34Z, plus two isolated samples',
+        '4.6× the burn at those revs — not a physically reachable operating point'],
+       ['2026-08-15', 'exactly 0.00 L/h with the engine running',
+        '00:49–15:36Z',
+        'most of a session, not a burst — the opposite tail of the same instrument']],
+      [1.15, 1.6, 1.7, 1.85], right_from=99,
+      note='Table 5 — The two flow-meter faults the guard exists to reject. Timestamps are from '
+           'the extracted caches; the fault flags in Table 3 do NOT mark either of these, which '
+           'is the point — the PLC did not consider the meter unhealthy.')
+para(f'The guard is that a cruise sample\'s fuel rate must agree with what the same RPM burns '
+     f'across the whole record. Median and MAD are taken over the POOLED bins so that one bad '
+     f'session cannot define its own normal, and the threshold is deliberately loose — '
+     f'{GUARD_MAD:g} MAD — because it exists to reject the physically impossible, not to tidy the '
+     f'scatter that sea state and loading legitimately produce. It removes '
+     f'{_GUARD_REJ:,} samples ({_GUARD_H:.1f} h) from a pool of {_GUARD_TOT:,}.')
+callout('Why this is not a filter of convenience',
+        'Rejecting data that disagrees with a model is how a fit is made to look better than it '
+        'is. Two things keep this honest. The comparison is against the OTHER SESSIONS at the '
+        'same engine speed, not against the fitted curve, so the guard cannot pull the answer '
+        'toward itself. And the rejections are reported per session at build time rather than '
+        'silently absorbed — if a future day loses a large fraction, that is a finding about the '
+        'instrument and it will be visible here rather than buried.')
+para('The consequence for the fit was not small. Before the guard, the 16-session refit reported '
+     'an efficiency shift of up to 11.8% against the previous curve and the comparison tool '
+     'refused it outright as too large to adopt blind. That refusal was correct: the shift was '
+     'being driven by the corrupt session rather than by the two-and-a-half orders of magnitude '
+     'more data. Diagnosing it, rather than accepting or overriding the refusal, is what made the '
+     'refit adoptable.')
+
+doc.add_heading('4.4  What else the PLC reported, and what it did not', level=2)
+para(f'The same sweep that measured the shaft fault covers every fault, alarm and detector '
+     f'boolean Telemetry3 carries — {len(_FS_FIELDS)} fields over {_FS_SAMPLES:,} samples. Across '
+     f'the whole record only two ever left their normal state:')
+bullets([
+    ('shaft_sensor_rpm_fault. ', f'{_SHAFT_N} assertions, §2.1.'),
+    ('water_in_engine_compartment. ',
+     f'One transition, {_WATER_TS}Z, cleared one second later. A single sample: a sensor blip '
+     f'rather than water in the bilge, and readable as such only because the clearing edge was '
+     f'recorded alongside the assertion.'),
+])
+para('Everything else — every engine alarm and warning, oil pressure, coolant and exhaust '
+     'temperature faults, both smoke detectors, the electrical-compartment water detector, all '
+     'humidity and temperature alarms — held normal throughout.')
+callout('The fuel alarms never fired, and that is a bound rather than a reassurance',
+        f'All six fuel booleans stayed false for the entire record: the low and very-low level '
+        f'alarms, the level-sensor fault, both fuel-in-water detectors and water-in-fuel. That '
+        f'includes the deepest drawdown in the data — {_LOW_PCT}% indicated at {_LOW_TS}Z, '
+        f'immediately before a refuel. So the low-level threshold sits somewhere below '
+        f'{_LOW_PCT}%, which is under the reserve band this planner operates in: the PLC\'s own '
+        f'alarm would not warn an operator at the reserve floor, and the gauge-denominated '
+        f'verdict in §6.2 is doing that work alone. It also does not establish that the alarm '
+        f'WORKS — a boolean that never leaves false across {_FS_SAMPLES:,} samples is equally '
+        f'consistent with a correctly armed alarm that had no reason to fire and with a dead one. '
+        f'Only a run that trips it can tell those apart.', WARN)
 
 # =============================================================== 5 BINNING/FIT
 doc.add_heading('5.  Binning and fitting', level=1)
@@ -240,7 +367,7 @@ table(['RPM bin', 'Samples', 'SOG (kt)', 'Fuel (L/h)', 'NM/L'],
         f'{b["kt"]:.2f}', f'{b["lph"]:.2f}', f'{b["kt"]/b["lph"]:.2f}']
        for b in FIT['bins']],
       [1.2, 1.1, 1.1, 1.1, 1.0], right_from=1,
-      note='Table 4 — The bin medians the fits are computed over. Bin count and contents change '
+      note='Table 5 — The bin medians the fits are computed over. Bin count and contents change '
            'as data accumulates; this table is regenerated with the document.')
 
 doc.add_heading('5.2  Per-day agreement', level=2)
@@ -327,7 +454,7 @@ table(['Property', 'Value'],
        ['Projection reach', f'{ofs.MAX_PROJECT_CYCLES} tidal cycles '
                             f'({ofs.MAX_PROJECT_CYCLES * ofs.M2_PERIOD_H:.1f} h)']],
       [2.6, 3.2], right_from=1,
-      note='Table 5 — Cycle shape and the limits around it, read from currents.py at build time.')
+      note='Table 6 — Cycle shape and the limits around it, read from currents.py at build time.')
 para('A requested time is answered by a ladder, and real data always beats an estimate: a cached '
      'cycle covering the window; else a cycle NOAA still serves covering it, found from the '
      'catalog for the price of one page rather than a 33 MB download, and fetched; else a '
@@ -351,7 +478,7 @@ table(['Method', 'RMS error against the model'],
          ['Assume slack water',
           f'{_PA["slack_rms_kt"][0]:.2f} – {_PA["slack_rms_kt"][1]:.2f} kt']],
       [3.0, 2.8], right_from=1,
-      note=f'Table 6 — Measured on {_PA["cycle"]} across {_PA["samples"]} samples '
+      note=f'Table 7 — Measured on {_PA["cycle"]} across {_PA["samples"]} samples '
            f'({_PA["measured_utc"]}), reproducible with tools/projection_accuracy.py. '
            + _PA['note'])
 para(f'The reach is capped at {ofs.MAX_PROJECT_CYCLES} cycles for that reason and not because it '
@@ -394,7 +521,7 @@ table(['Planned with', 'Fuel', 'Mission clock'],
        ['Per-leg currents from the forecast', '18.08 L  (+5.2%)', '7.43 h'],
        ['Sampled along the track', '17.64 L  (+2.7%)', '7.43 h']],
       [2.7, 1.7, 1.4], right_from=1,
-      note='Table 7 — Transcript against dbofs_20260813_t00z. The clock is identical in all '
+      note='Table 8 — Transcript against dbofs_20260813_t00z. The clock is identical in all '
            'three: a current moves the fuel and never the time.')
 para('The reading that matters is the third row. Sampling along the track gives 2.7% where the '
      'per-leg average gives 5.2% — nearly double — because the survey sits on one ground for four '
