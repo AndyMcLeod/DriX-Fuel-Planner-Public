@@ -1,3 +1,40 @@
+# ============================================================================
+# VENDORED FROM asv_core -- DO NOT EDIT THIS COPY.
+#
+#   source : asv_core/currents.py
+#   sync   : python tools/vendor.py            (from the asv_core repo)
+#   verify : python tools/vendor.py --check    (fails if this copy drifted)
+#
+# NO ABSOLUTE PATH APPEARS ABOVE, AND THAT IS DELIBERATE. Two of these repos
+# publish scrubbed PUBLIC mirrors, and Transit's exporter ABORTS on anything
+# matching [A-Z]:\Claude -- absolute paths name private sibling projects and
+# point a cloner at a drive they do not have. A header naming a path would be
+# publish-safe only for as long as somebody maintained a substitution rule for
+# it in each exporter separately. Naming the repo instead is safe by
+# construction, in every consumer, including ones that do not exist yet.
+#
+# A copy rather than an import because this repo has to stand on its own: it is
+# a separate repository, and this file is opened by path rather than imported
+# as a package. The old trade was drift -- a vendored file did not follow its
+# source, which is how the estate grew three copies of currents.py. The --check
+# above removes that trade: this copy cannot diverge without failing a suite.
+#
+# THIS CONSUMER, SPECIFICALLY:
+# This repo WROTE currents.py and was its first home, but the copy here had
+# fallen behind: the grid dimensions were hard-coded to DBOFS's 487 x 529, so
+# every other OFS answered HTTP 400. Transit fixed that and the fix never came
+# back. Adopting the core body BRINGS IT HERE.
+#
+# ON THE DBOFS PATH THIS SHOULD READ THE SAME 487 x 529 back out of the DDS, so
+# nothing changes for the planner as it is used today; what changes is that
+# another model would now work. That equivalence rests on the grid figure named
+# in Transit's own comment and on Transit having run this way in production --
+# it was NOT re-measured against a live DDS when the file moved to the core.
+# The first run against a real forecast is the one that confirms it.
+#
+# Edit the core file and re-run the sync. Everything below is verbatim.
+# ============================================================================
+
 """Surface currents from a NOAA Operational Forecast System, interpolated to
 any position and any time inside the model box.
 
@@ -33,16 +70,33 @@ CONVENTIONS
 
 WHAT INTERPOLATION IS DONE
     Bilinear in latitude/longitude between the four surrounding grid nodes,
-    linear in time between the two bracketing hourly frames. Land nodes (mask
-    0, or the -99999 fill) are dropped from the average and the remaining
-    weights renormalised, so a query in a channel one cell wide leans on the
-    water nodes rather than averaging in a zero from the bank. A query with no
-    water node in reach returns None, never a zero — a zero current and no
-    data are different answers.
+    linear in time between the two bracketing frames where they are an hour
+    apart. Land nodes (mask 0, or the -99999 fill) are dropped from the average
+    and the remaining weights renormalised, so a query in a channel one cell
+    wide leans on the water nodes rather than averaging in a zero from the
+    bank. A query with no water node in reach returns None, never a zero — a
+    zero current and no data are different answers.
+
+ANY MODEL, NOT ONLY THE HOURLY ONES ISSUED AT 00/06/12/18 Z (2026-10-07)
+    This was written for DBOFS and assumed both its habits: cycles issued at
+    00, 06, 12 and 18 Z, and a frame every hour. Neither holds across the OFS
+    family. WCOFS, SSCOFS, NGOFS2 and SFBOFS are issued at 03, 09, 15 and
+    21 Z, so `available_cycles` listed nothing for them; GOMOFS, WCOFS and
+    NGOFS2 write a frame every 3 hours, so `fetch_cycle` refused them as
+    "not hourly"; and the Great Lakes models repeat the cycle-hour frame in
+    both their nowcast and their forecast, so they were refused too. Now any
+    cycle hour is listed, a repeated instant is kept once, and frames up to
+    MAX_FRAME_GAP_S apart are read. Between frames more than an hour apart the
+    time interpolation is a CUBIC through the four nearest (Catmull-Rom):
+    measured by keeping every third frame of two hourly DBOFS cycles and
+    rebuilding the rest, it lands 0.059 / 0.073 kt RMS from the true frames
+    where linear lands 0.099 / 0.112. Hourly models are read exactly as
+    before.
 
 Read-only against NOAA and against this repo. Nothing here writes model.json.
 """
 import argparse
+import bisect
 import dataclasses
 import csv
 import gzip
@@ -65,8 +119,16 @@ MS_TO_KT = 1.9438444924406046
 FILL = -99999.0
 EPOCH = datetime(2016, 1, 1, tzinfo=timezone.utc)   # OFS `time` units, verified
 SURFACE = 0            # Depth[0] == 0.0 m, checked by verify()
-CYCLES = ('18z', '12z', '06z', '00z')               # newest first
 TIMEOUT = 180
+
+# Frames further apart than this are a MISSING frame, not a coarse model: the
+# coarsest OFS writes one every 3 hours, and interpolating a tide across a hole
+# twice that wide would pass a guess off as a reading.
+MAX_FRAME_GAP_S = 3 * 3600
+# Frames further apart than this are interpolated in time by a cubic through the
+# four nearest rather than a line (see the header): an hourly model is read as
+# it always was.
+CUBIC_ABOVE_S = 1.5 * 3600
 
 # Principal lunar semidiurnal period. The current in this estuary is
 # semidiurnal, so this is the interval a projection borrows across when the
@@ -207,7 +269,13 @@ def available_cycles(ofs: str = 'dbofs', days_back: int = 2) -> list:
         if not html:
             continue
         names = set(re.findall(rf'{ofs}\.t\d\dz\.\d{{8}}\.regulargrid\.[nf]\d{{3}}\.nc', html))
-        for cyc in CYCLES:
+        # ANY CYCLE HOUR, read off the names: WCOFS, SSCOFS, NGOFS2 and SFBOFS
+        # are issued at 03/09/15/21 Z, and a fixed 00/06/12/18 list found nothing
+        # for any of them.
+        hours_of_day = sorted({m.group(1) for m in (re.search(r'\.t(\d\d)z\.', n) for n in names) if m},
+                              reverse=True)
+        for hh in hours_of_day:
+            cyc = f'{hh}z'
             hours = sorted(n for n in names if f'.t{cyc}.' in n)
             if hours:
                 found.append((f'{day:%Y%m%d}', cyc, hours))
@@ -225,6 +293,30 @@ def _file_url(ofs: str, datestr: str, cycle: str, hour_file: str) -> str:
 # --------------------------------------------------------------------------- #
 def _tag(ofs, datestr, cycle):
     return f'{ofs}_{datestr}_t{cycle}'
+
+
+def frame_order(times):
+    """Indices of a cycle's frames in time order, each INSTANT ONCE, refusing a
+    hole: raises RuntimeError where two kept frames are more than
+    MAX_FRAME_GAP_S apart.
+
+    A repeated instant is a nowcast's last frame and the forecast's first - the
+    Great Lakes models write both - and the first one met in time order wins
+    (the nowcast's, since `fetch_cycle` lists those first). Frames an hour apart
+    (DBOFS) and three hours apart (GOMOFS, WCOFS, NGOFS2) are both a model's
+    own step; a gap wider than MAX_FRAME_GAP_S is a frame NOAA did not post."""
+    idx = sorted(range(len(times)), key=lambda i: (times[i], i))
+    kept = []
+    for i in idx:
+        if kept and abs(times[i] - times[kept[-1]]) < 1.0:
+            continue
+        kept.append(i)
+    for a, b in zip(kept, kept[1:]):
+        gap = times[b] - times[a]
+        if gap > MAX_FRAME_GAP_S + 1.0:
+            raise RuntimeError(f'frames are more than {MAX_FRAME_GAP_S / 3600:.0f} h apart: '
+                               f'a gap of {gap / 3600:.2f} h at {_iso(times[a])}')
+    return kept
 
 
 def fetch_cycle(ofs='dbofs', datestr=None, cycle=None, bbox=None,
@@ -250,12 +342,22 @@ def fetch_cycle(ofs='dbofs', datestr=None, cycle=None, bbox=None,
     say = (lambda *a: None) if quiet else print
 
     first = _file_url(ofs, datestr, cycle, hours[0])
-    say(f'{ofs.upper()} {datestr} t{cycle} — {len(hours)} hourly files')
+    say(f'{ofs.upper()} {datestr} t{cycle} — {len(hours)} files')
 
     # ---- static geometry, read once ---------------------------------------
-    corners = dap_fetch(first, 'Latitude[0:486:486][0],Longitude[0][0:528:528]')
+    # ---- MODIFIED FROM THE VENDORED ORIGINAL (see the header) --------------
+    # The original hard-coded 487 x 529 — DBOFS's grid — in both the projection and
+    # ny_full/nx_full. Every other OFS has its own shape (CBOFS is 693 x 509), so
+    # the request ran off the end of the array and the server answered HTTP 400.
+    # The dimensions are declared in the DDS, so read them instead of assuming.
+    _dds = _get(first + '.dds').decode('utf8', 'replace')
+    _m = re.search(r'Latitude\[ny\s*=\s*(\d+)\]\[nx\s*=\s*(\d+)\]', _dds)
+    if not _m:
+        raise RuntimeError(f'{ofs}: could not read grid dimensions from the DDS')
+    ny_full, nx_full = int(_m.group(1)), int(_m.group(2))
+    corners = dap_fetch(first, f'Latitude[0:{ny_full - 1}:{ny_full - 1}][0],'
+                               f'Longitude[0][0:{nx_full - 1}:{nx_full - 1}]')
     lats_all, lons_all = corners['Latitude'][0], corners['Longitude'][0]
-    ny_full, nx_full = 487, 529
     dlat = (lats_all[1] - lats_all[0]) / (ny_full - 1)
     dlon = (lons_all[1] - lons_all[0]) / (nx_full - 1)
 
@@ -291,16 +393,12 @@ def fetch_cycle(ofs='dbofs', datestr=None, cycle=None, bbox=None,
         got = dap_fetch(_file_url(ofs, datestr, cycle, hour_file), proj)
         return (got['time'][0][0], got['u_eastward'][0], got['v_northward'][0])
 
-    say(f'fetching {len(hours)} hours ...')
+    say(f'fetching {len(hours)} frames ...')
     with ThreadPoolExecutor(max_workers=workers) as pool:
         frames = list(pool.map(one, hours))
 
-    order = sorted(range(len(frames)), key=lambda i: frames[i][0])
+    order = frame_order([f[0] for f in frames])
     times = [frames[i][0] for i in order]
-    for a, b in zip(times, times[1:]):
-        if abs((b - a) - 3600) > 1:
-            raise RuntimeError(f'frames are not hourly: gap of {(b - a) / 3600:.2f} h at '
-                               f'{_iso(a)}')
 
     blob = bytearray()
     for i in order:
@@ -430,12 +528,29 @@ class Currents:
         if t < self.times[0] - 1e-6 or t > self.times[-1] + 1e-6:
             raise ValueError(f'{when:%Y-%m-%dT%H:%M:%SZ} is outside the cached span '
                              f'{self.start:%Y-%m-%dT%H:%MZ}..{self.end:%Y-%m-%dT%H:%MZ}')
-        k = min(max(int((t - self.times[0]) // 3600), 0), len(self.times) - 2)
-        frac = (t - self.times[k]) / (self.times[k + 1] - self.times[k])
+        # THE BRACKETING FRAMES BY SEARCH, not by dividing by an hour: frames are
+        # 1 h or 3 h apart by model, and a 3-hourly cycle read as hourly answered
+        # from the wrong frame for two hours in three.
+        k = min(max(bisect.bisect_right(self.times, t) - 1, 0), len(self.times) - 2)
+        t0, t1 = self.times[k], self.times[k + 1]
+        frac = (t - t0) / (t1 - t0)
         a = self._at_frame(k, lat, lon)
         b = self._at_frame(k + 1, lat, lon)
         if a is None or b is None:
             return None
+        if t1 - t0 > CUBIC_ABOVE_S and 0 < k < len(self.times) - 2:
+            # A COARSE MODEL: a cubic through the four nearest frames (Catmull-
+            # Rom), where all four are evenly spaced and all have water here.
+            # Over a 3 h step a line cuts the corner of every tidal curve; see
+            # the header for the measurement. At either end of the span, or
+            # across an uneven step, the line stands.
+            tp, tq = self.times[k - 1], self.times[k + 2]
+            if abs((t0 - tp) - (t1 - t0)) < 1.0 and abs((tq - t1) - (t1 - t0)) < 1.0:
+                p = self._at_frame(k - 1, lat, lon)
+                q = self._at_frame(k + 2, lat, lon)
+                if p is not None and q is not None:
+                    return uv_to_set(_catmull_rom(p[0], a[0], b[0], q[0], frac),
+                                     _catmull_rom(p[1], a[1], b[1], q[1], frac))
         u = a[0] + (b[0] - a[0]) * frac
         v = a[1] + (b[1] - a[1]) * frac
         return uv_to_set(u, v)
@@ -489,6 +604,14 @@ class Currents:
             raise ValueError(
                 f'cached span is shorter than one tidal cycle — cannot project')
         return self.at(lat, lon, EPOCH + timedelta(seconds=src)), (src - t) / 3600.0
+
+
+def _catmull_rom(x0, x1, x2, x3, t):
+    """The uniform Catmull-Rom cubic between x1 (t = 0) and x2 (t = 1), shaped by
+    the frames either side; it passes through both, so a frame time still reads
+    that frame exactly."""
+    return 0.5 * (2 * x1 + (x2 - x0) * t + (2 * x0 - 5 * x1 + 4 * x2 - x3) * t * t
+                  + (3 * x1 - x0 - 3 * x2 + x3) * t * t * t)
 
 
 def uv_to_set(u, v):
@@ -567,9 +690,10 @@ def verify(tag=None, cache=None):
     check('at() on a frame time equals that frame',
           b and abs(b[2] - a[0]) < 1e-6 and abs(b[3] - a[1]) < 1e-6)
 
-    # 4. the span is hourly and unbroken
+    # 4. the span is unbroken: frames rise, a model's own step apart (1 h or 3 h)
     gaps = [(x - y) for x, y in zip(cur.times[1:], cur.times[:-1])]
-    check('frames are hourly with no gap', all(abs(g - 3600) < 1 for g in gaps),
+    check(f'frames rise with no gap over {MAX_FRAME_GAP_S / 3600:.0f} h',
+          all(0 < g <= MAX_FRAME_GAP_S + 1 for g in gaps),
           f'{len(cur.times)} frames, {min(gaps) / 3600:.2f}..{max(gaps) / 3600:.2f} h')
 
     # 5. land returns None rather than a zero current
@@ -1003,12 +1127,25 @@ def cycle_span(datestr, cycle, hours=None):
         # in '.nc', so a substring test counts each forecast file as a nowcast
         # one and pushes the span two days early. Found by a test, which is the
         # only reason it is not still there.
-        kinds = [m.group(1) for m in
-                 (re.search(r'\.([nf])\d{3}\.nc$', h) for h in hours) if m]
-        n = kinds.count('n')
-        f = kinds.count('f')
-    else:
-        n, f = NOWCAST_H, FORECAST_H
+        #
+        # READ THE HOUR NUMBERS, NOT THE COUNT (2026-10-07). A count is a span
+        # only when every file is an hour: GOMOFS writes f003..f072 every 3 h,
+        # 24 files for 72 h, and counting them reported a 24 h forecast. The
+        # forecast runs to the last fNNN; the nowcast's last file is the cycle
+        # hour, so nNNN lies (last - NNN) hours before it.
+        idx = [(m.group(1), int(m.group(2))) for m in
+               (re.search(r'\.([nf])(\d{3})\.nc$', h) for h in hours) if m]
+        ns = [i for kind, i in idx if kind == 'n']
+        fs = [i for kind, i in idx if kind == 'f']
+        if ns:
+            start = base - timedelta(hours=max(ns) - min(ns))
+        elif fs:
+            start = base + timedelta(hours=min(fs))
+        else:
+            start = base
+        end = base + timedelta(hours=max(fs)) if fs else base
+        return start, end
+    n, f = NOWCAST_H, FORECAST_H
     return base - timedelta(hours=max(n - 1, 0)), base + timedelta(hours=f)
 
 

@@ -24,6 +24,72 @@ coefficient without knowing which measurement or decision it traces to.
 Tree clean, both remotes pushed, **400 tests** green. **16 MCAP sessions
 (04–15 Aug) cached and adopted.** Nothing half-finished.
 
+**2026-10-07 — `currents.py` RE-VENDORED FROM `asv_core` (`753e4b3`): THE READER NOW READS
+ANY OFS, AND NOTHING HERE MOVES.** It was written for DBOFS and assumed both of its habits.
+Other models broke both: WCOFS, SSCOFS, NGOFS2 and SFBOFS are issued at 03/09/15/21 Z
+(`available_cycles` listed nothing for them), GOMOFS, WCOFS and NGOFS2 write a frame every
+3 h (`fetch_cycle` refused them as "not hourly"), and the Great Lakes models write the
+cycle-hour frame twice. Now the cycle hour is read off the file names; frames are put in
+time order with a repeated instant kept once, and only a hole wider than 3 h is refused;
+`Currents.at` FINDS its frame pair instead of dividing by an hour; between frames more
+than 1.5 h apart the curve is a Catmull-Rom cubic (on real DBOFS thinned to 3-hourly it
+cut the error from 0.099-0.112 kn RMS to 0.059-0.073); `cycle_span` reads hour numbers,
+not a file count. **For DBOFS every answer is what it was**: hourly frames are still read
+linearly, its cycles are still found, its span is still base-5 h..base+48 h, and all 400
+tests pass unchanged. This planner still asks for DBOFS only, so it gains nothing visible
+today; the change is for the day it takes a second model. The new behavior is tested in
+the core (`tests/currents.py`, 11 checks), not here.
+
+**2026-08-18 — `server.MAX_SURVEY_LINES` IS NOW `MAX_REQUEST_SURVEY_LINES`. Value
+unchanged at 2000; a rename, nothing else.** It is an INBOUND REQUEST BOUND — paired with
+`MAX_TRACK_POINTS`, guarding how much work one HTTP request may ask for, refused with a 422
+naming the limit. It is **not** a survey property, and it is **not** the solver: that is
+`engine.max_survey_lines()`, which takes its own `cap`.
+
+The old name collided with the pattern-generation clamp in the ASV console (600) and the
+WorldView planner (4000) — **three different quantities under one name across three repos**.
+An estate audit reported it as a constant that had drifted to 600/2000/4000, and the first
+recommendation was to converge them. That would have **rejected perfectly good
+601-to-2000-line imports here** for no reason. The quantities were never the same thing;
+only the name was. `MAX_TRACK_POINTS` needs no such treatment — nothing else is called that.
+
+**2026-08-19 — `utm.py` ARRIVES, AND `lineplan.py`'S UTM SERIES MOVED INTO IT.** The ~40
+lines of Snyder's series that used to sit inside `lineplan.utm_to_geographic` are now
+`utm.py`, vendored beside it and shared with the transit tool, which had a second copy.
+**Nothing here changes numerically** — the core body IS this file's former one, and
+`lineplan.utm_to_geographic` still exists, still takes `(easting, northing, zone,
+northern=True)`, and still raises **`LinePlanError`** on a bad zone. It is a WRAPPER rather
+than a plain alias precisely so that error type survives: this module promises
+`LinePlanError` and its tests catch exactly that. All 31 line-plan tests and all 400 pass
+unchanged, which is the evidence.
+
+**WHAT THIS REPO CONTRIBUTED: ITS ZONE GUARD.** Transit's copy had none, in either
+direction, and its export takes the zone straight from a request body — `{"utm_zone": 99}`
+wrote a complete, openable shapefile with its first vertex four million kilometres out. The
+`1 <= zone <= 60` check that has always been here is now the one definition of it for the
+estate. It also got stricter on the way: it went through `int()`, which truncates, so 60.5
+read as zone 60. Integral values only now; `18.0` and `"18"` still read as zone 18.
+
+**2026-08-18 — `currents.py` AND `tools/docx_style.py` ARE NOW VENDORED FROM `asv_core`.
+DO NOT EDIT EITHER HERE.** Change the core file at the asv_core repo and run
+`python tools/vendor.py` from there; `--check` fails if a copy is edited in place.
+
+**THIS REPO GAINED A BUG FIX IN THE MOVE, AND IT IS THE ONLY BEHAVIOUR CHANGE.** This repo
+WROTE `currents.py`, but its copy had fallen behind: `fetch_cycle` hard-coded the grid to
+DBOFS's 487 × 529, so **every other OFS answered HTTP 400**. Transit fixed that on
+2026-08-13 by reading the dimensions out of the dataset DDS, and the fix never came back
+here — five days of one-way drift that the old vendoring header could describe but not
+prevent. The core adopted Transit's body, so the fix is now here.
+
+On the DBOFS path this should read the same 487 × 529 back out of the DDS, so nothing
+changes for the planner as used today; what changes is that another model would now work.
+**That equivalence rests on Transit's own comment and on Transit running this way in
+production — it was NOT re-measured against a live DDS when the file moved.** The first run
+against a real forecast is what confirms it. 400 tests (90 of them `test_currents`) stay
+green, but they do not reach the network.
+
+`model.json` is still copied to Transit the old way, with the drift trade intact.
+
 **Newest thing: THE 16-SESSION REFIT (2026-08-15), and it is the first one that
 MOVED the curve.** 131.9 h of steady cruise against 4.85 h, spanning 1279–3080
 rpm against 1400–2500. Efficiency shifts up to **11.8%** at 5 and 10 kt — the
@@ -1599,6 +1665,18 @@ Two traps this caught on 2026-08-09:
 All four document builders share `tools/docx_style.py` — page setup, styles and
 the `para`/`mono`/`bullets`/`table`/`callout`/`figure` helpers, plus the
 table-width rail. Nothing is duplicated between them any more.
+
+**`tools/docx_style.py` is now VENDORED FROM `asv_core` (2026-08-18).** This repo was
+its parent — Transit had copied it and the two had not yet drifted — so the core took
+this body verbatim and both copies are now synced from
+`asv_core/docx_style.py` in the asv_core repo. (Named without a path deliberately:
+**this file ships in the public export** — `EXCLUDE` here is only `make_public.py`,
+unlike Transit which DROPs `CLAUDE.md` — so a path here reaches the public repo.)
+**Do not edit it here.** Change the core file
+and run `python tools/vendor.py` from that repo; `python tools/vendor.py --check` fails
+if either copy was edited in place. Nothing in the body changed in the move, only a
+header was added — but the standing rule still holds: **if you change `docx_style`,
+re-run all four builders and diff the output**, and now also re-run Transit's.
 
 The three Word documents genuinely differ in three ways, and those survive as
 arguments to `new_document()` rather than as forked code: `right_from` (the

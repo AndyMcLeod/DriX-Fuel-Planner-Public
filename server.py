@@ -140,8 +140,22 @@ def _parse_waypoints(raw, unit: str) -> tuple[float, ...]:
     return tuple(float(x) for x in raw)
 
 
+# INBOUND REQUEST BOUNDS. Both are limits on what a CLIENT may send — how much
+# work one HTTP request is allowed to ask for — and neither is a property of a
+# survey. Exceeding either is refused with a 422 naming the limit; nothing is
+# silently truncated.
+#
+# THE SURVEY ONE CARRIES `REQUEST` IN ITS NAME ON PURPOSE (renamed 2026-08-18).
+# It was `MAX_SURVEY_LINES`, which is also the name of the pattern-generation
+# clamp in the ASV console (600) and the WorldView planner (4000) — three
+# different quantities, one name, across three repos. An estate audit reported
+# them as a constant that had "drifted" to 600/2000/4000, and the first
+# recommendation off the back of that was to converge them, which would have
+# rejected perfectly good 601-to-2000-line imports here for no reason. The
+# quantities were never the same thing; only the name was. `MAX_TRACK_POINTS`
+# needs no such treatment because nothing else in the estate is called that.
 MAX_TRACK_POINTS = 2000
-MAX_SURVEY_LINES = 2000
+MAX_REQUEST_SURVEY_LINES = 2000
 
 
 def _parse_track(raw):
@@ -180,8 +194,8 @@ def _parse_survey_lines(raw):
         return None
     if not isinstance(raw, list):
         raise ValueError('survey_lines must be a list of lines')
-    if len(raw) > MAX_SURVEY_LINES:
-        raise ValueError(f'more than {MAX_SURVEY_LINES} survey lines')
+    if len(raw) > MAX_REQUEST_SURVEY_LINES:
+        raise ValueError(f'more than {MAX_REQUEST_SURVEY_LINES} survey lines')
     out = []
     for line in raw:
         pts = _parse_track(line)          # same point rules, same bounds
@@ -209,8 +223,8 @@ def _parse_pattern(raw):
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         raise ValueError(f'pattern anchor {lat}, {lon} is not on the earth')
     lines = int(float(raw.get('lines', 0)))
-    if lines < 1 or lines > MAX_SURVEY_LINES:
-        raise ValueError(f'pattern needs 1 to {MAX_SURVEY_LINES} lines')
+    if lines < 1 or lines > MAX_REQUEST_SURVEY_LINES:
+        raise ValueError(f'pattern needs 1 to {MAX_REQUEST_SURVEY_LINES} lines')
     length = float(raw.get('length_nm', 0.0))
     spacing = float(raw.get('spacing_nm', 0.0))
     if length <= 0:
@@ -594,9 +608,9 @@ class Handler(BaseHTTPRequestHandler):
             self.log_message('lineplan: %r', exc)
             return self._error(422, 'could not read that line plan')
 
-        if len(plan.lines) > MAX_SURVEY_LINES:
+        if len(plan.lines) > MAX_REQUEST_SURVEY_LINES:
             return self._error(422, f'that plan has {len(plan.lines)} lines, '
-                                    f'more than the {MAX_SURVEY_LINES} allowed')
+                                    f'more than the {MAX_REQUEST_SURVEY_LINES} allowed')
         return self._json(200, {'summary': lineplan.describe(plan),
                                 'lines': plan.as_tracks()})
 
