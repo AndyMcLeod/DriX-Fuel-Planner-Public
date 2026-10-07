@@ -24,12 +24,13 @@ coefficient without knowing which measurement or decision it traces to.
 Tree clean, both remotes pushed, **400 tests** green. **16 MCAP sessions
 (04–15 Aug) cached and adopted.** Nothing half-finished.
 
-**2026-10-07 — `currents.py` RE-VENDORED FROM `asv_core` (`753e4b3`): THE READER NOW READS
+**2026-10-07 — `currents.py` RE-VENDORED FROM `asv_core` (`e02018d`): THE READER NOW READS
 ANY OFS, AND NOTHING HERE MOVES.** It was written for DBOFS and assumed both of its habits.
-Other models broke both: WCOFS, SSCOFS, NGOFS2 and SFBOFS are issued at 03/09/15/21 Z
-(`available_cycles` listed nothing for them), GOMOFS, WCOFS and NGOFS2 write a frame every
-3 h (`fetch_cycle` refused them as "not hourly"), and the Great Lakes models write the
-cycle-hour frame twice. Now the cycle hour is read off the file names; frames are put in
+Read off NOAA's own file lists for 2026-10-06, other models broke both: SSCOFS, NGOFS2 and
+SFBOFS are issued at 03/09/15/21 Z and WCOFS at 03 Z (`available_cycles` listed nothing for
+them), GOMOFS, WCOFS and NGOFS2 write a frame every 3 h (`fetch_cycle` refused them as "not
+hourly"), and the four Great Lakes models, SFBOFS, SSCOFS and NGOFS2 write the cycle hour
+twice (n006 and f000). Now the cycle hour is read off the file names; frames are put in
 time order with a repeated instant kept once, and only a hole wider than 3 h is refused;
 `Currents.at` FINDS its frame pair instead of dividing by an hour; between frames more
 than 1.5 h apart the curve is a Catmull-Rom cubic (on real DBOFS thinned to 3-hourly it
@@ -38,7 +39,7 @@ not a file count. **For DBOFS every answer is what it was**: hourly frames are s
 linearly, its cycles are still found, its span is still base-5 h..base+48 h, and all 400
 tests pass unchanged. This planner still asks for DBOFS only, so it gains nothing visible
 today; the change is for the day it takes a second model. The new behavior is tested in
-the core (`tests/currents.py`, 11 checks), not here.
+the core (`tests/currents.py`, 12 checks), not here.
 
 **2026-08-18 — `server.MAX_SURVEY_LINES` IS NOW `MAX_REQUEST_SURVEY_LINES`. Value
 unchanged at 2000; a rename, nothing else.** It is an INBOUND REQUEST BOUND — paired with

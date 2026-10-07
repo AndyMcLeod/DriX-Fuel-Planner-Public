@@ -80,13 +80,14 @@ WHAT INTERPOLATION IS DONE
 ANY MODEL, NOT ONLY THE HOURLY ONES ISSUED AT 00/06/12/18 Z (2026-10-07)
     This was written for DBOFS and assumed both its habits: cycles issued at
     00, 06, 12 and 18 Z, and a frame every hour. Neither holds across the OFS
-    family. WCOFS, SSCOFS, NGOFS2 and SFBOFS are issued at 03, 09, 15 and
-    21 Z, so `available_cycles` listed nothing for them; GOMOFS, WCOFS and
-    NGOFS2 write a frame every 3 hours, so `fetch_cycle` refused them as
-    "not hourly"; and the Great Lakes models repeat the cycle-hour frame in
-    both their nowcast and their forecast, so they were refused too. Now any
-    cycle hour is listed, a repeated instant is kept once, and frames up to
-    MAX_FRAME_GAP_S apart are read. Between frames more than an hour apart the
+    family. Read off NOAA's own file lists for 2026-10-06: SSCOFS, NGOFS2 and
+    SFBOFS are issued at 03, 09, 15 and 21 Z and WCOFS once a day at 03 Z, so
+    `available_cycles` listed nothing for them; GOMOFS, WCOFS and NGOFS2 write
+    a frame every 3 hours, so `fetch_cycle` refused them as "not hourly"; and
+    the four Great Lakes models, SFBOFS, SSCOFS and NGOFS2 write the cycle
+    hour twice (n006 and f000), a gap of zero, so they were refused too. Now
+    any cycle hour is listed, a repeated instant is kept once, and frames up
+    to MAX_FRAME_GAP_S apart are read. Between frames 3 hours apart the
     time interpolation is a CUBIC through the four nearest (Catmull-Rom):
     measured by keeping every third frame of two hourly DBOFS cycles and
     rebuilding the rest, it lands 0.059 / 0.073 kt RMS from the true frames
@@ -269,9 +270,9 @@ def available_cycles(ofs: str = 'dbofs', days_back: int = 2) -> list:
         if not html:
             continue
         names = set(re.findall(rf'{ofs}\.t\d\dz\.\d{{8}}\.regulargrid\.[nf]\d{{3}}\.nc', html))
-        # ANY CYCLE HOUR, read off the names: WCOFS, SSCOFS, NGOFS2 and SFBOFS
-        # are issued at 03/09/15/21 Z, and a fixed 00/06/12/18 list found nothing
-        # for any of them.
+        # ANY CYCLE HOUR, read off the names: SSCOFS, NGOFS2 and SFBOFS are
+        # issued at 03/09/15/21 Z and WCOFS at 03 Z, and a fixed 00/06/12/18
+        # list found nothing for any of them.
         hours_of_day = sorted({m.group(1) for m in (re.search(r'\.t(\d\d)z\.', n) for n in names) if m},
                               reverse=True)
         for hh in hours_of_day:
@@ -301,7 +302,8 @@ def frame_order(times):
     MAX_FRAME_GAP_S apart.
 
     A repeated instant is a nowcast's last frame and the forecast's first - the
-    Great Lakes models write both - and the first one met in time order wins
+    Great Lakes models, SFBOFS, SSCOFS and NGOFS2 write both (n006 and f000) -
+    and the first one met in time order wins
     (the nowcast's, since `fetch_cycle` lists those first). Frames an hour apart
     (DBOFS) and three hours apart (GOMOFS, WCOFS, NGOFS2) are both a model's
     own step; a gap wider than MAX_FRAME_GAP_S is a frame NOAA did not post."""
@@ -426,7 +428,7 @@ def fetch_cycle(ofs='dbofs', datestr=None, cycle=None, bbox=None,
 
     size = (cache / f'{tag}_uv.bin.gz').stat().st_size
     say(f'cached {len(times)} frames, {_iso(times[0])} -> {_iso(times[-1])} '
-        f'({(times[-1] - times[0]) / 3600 + 1:.0f} h span), {size / 1e6:.1f} MB gzipped')
+        f'({(times[-1] - times[0]) / 3600:.0f} h span), {size / 1e6:.1f} MB gzipped')
     return tag
 
 
