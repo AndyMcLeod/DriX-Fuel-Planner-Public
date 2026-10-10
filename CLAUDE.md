@@ -24,6 +24,19 @@ coefficient without knowing which measurement or decision it traces to.
 Tree clean, both remotes pushed, **400 tests** green. **16 MCAP sessions
 (04–15 Aug) cached and adopted.** Nothing half-finished.
 
+**2026-10-09 — `currents.py` RE-VENDORED FROM `asv_core` (`5936358`): EACH MODEL'S OWN TIME
+ORIGIN, AND NOTHING HERE MOVES.** The OFS family does not share one time origin, and the reader
+took every raw `time` as seconds since 2016. Read off each model's own file headers on NOAA's
+S3 bucket that day: DBOFS, CBOFS, GOMOFS and WCOFS count from 2016, TBOFS from 2009, SFBOFS
+from 2013, LEOFS from 2015, SSCOFS and the Great Lakes LMHOFS/LOOFS/LSOFS from 2018, NGOFS2
+from 2019 - so a LEOFS cycle was cached a year late, an SSCOFS one two years early, and no frame
+ever covered now. `fetch_cycle` now reads the `time` units out of the file's own DAS and
+converts with `epoch_seconds`, and the file NAMES stand as a second witness: a cycle whose
+frames land more than a day outside the hours its names give is refused in words rather than
+cached misdated. The cache still counts from 2016. **This planner asks for DBOFS only, whose
+origin IS 2016, so every answer is what it was** and all 400 tests pass unchanged; the fix is
+for the day it takes a second model. Tested in the core (`tests/currents.py` checks 8-8e).
+
 **2026-10-07 — `currents.py` RE-VENDORED FROM `asv_core` (`e02018d`): THE READER NOW READS
 ANY OFS, AND NOTHING HERE MOVES.** It was written for DBOFS and assumed both of its habits.
 Read off NOAA's own file lists for 2026-10-06, other models broke both: SSCOFS, NGOFS2 and
